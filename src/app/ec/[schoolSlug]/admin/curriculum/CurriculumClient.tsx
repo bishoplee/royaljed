@@ -18,6 +18,21 @@ interface Lesson {
   active: boolean;
 }
 
+interface AccessLink {
+  id: string;
+  lessonId: string;
+  token: string;
+  maxViews: number;
+  viewCount: number;
+  expiresAt: string;
+  createdAt: string;
+  student: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+}
+
 interface Module {
   id: string;
   title: string;
@@ -121,6 +136,18 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
+  const [selectedLessonForLinks, setSelectedLessonForLinks] = useState<Lesson | null>(null);
+  const [accessLinks, setAccessLinks] = useState<AccessLink[]>([]);
+  const [accessLinkForm, setAccessLinkForm] = useState({
+    expiresAt: '',
+    maxViews: '1',
+  });
+  const [isAccessLinkPanelOpen, setIsAccessLinkPanelOpen] = useState(false);
+  const [isLinkSubmitting, setIsLinkSubmitting] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkSuccess, setLinkSuccess] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
   // Form states
   const [newModule, setNewModule] = useState({ title: '', description: '', level: 'BEGINNER' });
@@ -157,6 +184,7 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
 
   // Polling state for transcoding status
   const [pollingLessonId, setPollingLessonId] = useState<string | null>(null);
+  const [processingBannerVisible, setProcessingBannerVisible] = useState(false);
   const [transcodeProgress, setTranscodeProgress] = useState<Record<string, TranscodeProgress>>({});
   const processingLessonIds = useMemo(() => {
     const ids = new Set<string>();
@@ -177,7 +205,10 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
   }, [modules, pollingLessonId]);
 
   useEffect(() => {
-    if (processingLessonIds.length === 0) return;
+    if (processingLessonIds.length === 0 && !pollingLessonId) {
+      setProcessingBannerVisible(false);
+      return;
+    }
 
     let cancelled = false;
 
@@ -195,6 +226,7 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
         if (cancelled) return;
 
         let shouldRefresh = false;
+        let hasActiveProcessing = false;
 
         statusResults.forEach((result) => {
           if (!result) return;
@@ -203,10 +235,15 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
           const progress = normalizeProgress(data.progress);
 
           if (progress) {
+            hasActiveProcessing = true;
             setTranscodeProgress((prev) => ({
               ...prev,
               [lessonId]: progress,
             }));
+          }
+
+          if (data.videoStatus === 'PROCESSING') {
+            hasActiveProcessing = true;
           }
 
           if (data.videoStatus === 'READY' || data.videoStatus === 'FAILED') {
@@ -243,6 +280,8 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
         if (shouldRefresh) {
           router.refresh(); // Reload data from server
         }
+
+        setProcessingBannerVisible(Boolean(pollingLessonId) || hasActiveProcessing);
       } catch (err) {
         console.error('Polling status error:', err);
       }
@@ -328,35 +367,84 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
     }
   };
 
+  const resetLessonForm = () => {
+    setEditingLessonId(null);
+    setNewLesson({
+      moduleId: '',
+      title: '',
+      description: '',
+      lessonType: 'VIDEO',
+      level: 'BEGINNER',
+      isFreePreview: false,
+    });
+  };
+
+  const openCreateLessonModal = () => {
+    resetLessonForm();
+    setIsLessonModalOpen(true);
+  };
+
+  const openEditLessonModal = (lesson: Lesson) => {
+    setEditingLessonId(lesson.id);
+    setNewLesson({
+      moduleId: lesson.moduleId,
+      title: lesson.title,
+      description: lesson.description || '',
+      lessonType: lesson.lessonType,
+      level: lesson.level,
+      isFreePreview: lesson.isFreePreview,
+    });
+    setIsLessonModalOpen(true);
+  };
+
   const handleCreateLesson = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLesson.moduleId || !newLesson.title.trim()) return;
 
     try {
-      const res = await fetch(`/api/ec/${schoolSlug}/admin/lessons`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newLesson),
-      });
+      const res = await fetch(
+        editingLessonId
+          ? `/api/ec/${schoolSlug}/admin/lessons/${editingLessonId}`
+          : `/api/ec/${schoolSlug}/admin/lessons`,
+        {
+          method: editingLessonId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newLesson),
+        }
+      );
 
       if (res.ok) {
         setIsLessonModalOpen(false);
-        setNewLesson({
-          moduleId: '',
-          title: '',
-          description: '',
-          lessonType: 'VIDEO',
-          level: 'BEGINNER',
-          isFreePreview: false,
-        });
+        resetLessonForm();
         router.refresh();
       } else {
         const errData = await res.json();
-        alert(`Error: ${errData.error}`);
+        alert(`Error: ${errData.error || 'Failed to save lesson'}`);
       }
     } catch (err) {
       console.error(err);
-      alert('Network error creating lesson');
+      alert(editingLessonId ? 'Network error updating lesson' : 'Network error creating lesson');
+    }
+  };
+
+  const handleDeleteLesson = async (lessonId: string) => {
+    const confirmed = window.confirm('Delete this lesson? This action cannot be undone.');
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/ec/${schoolSlug}/admin/lessons/${lessonId}`, {
+        method: 'DELETE',
+      });
+
+      if (res.ok) {
+        router.refresh();
+      } else {
+        const errData = await res.json();
+        alert(`Error: ${errData.error || 'Failed to delete lesson'}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error deleting lesson');
     }
   };
 
@@ -525,6 +613,7 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
         setIsUploadModalOpen(false);
         setIsUploading(false);
         setPollingLessonId(uploadLessonId);
+        setProcessingBannerVisible(true);
         router.refresh();
       }, 1500);
 
@@ -538,6 +627,7 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
         total: 0,
       });
       setIsUploading(false);
+      setProcessingBannerVisible(false);
     }
   };
 
@@ -545,6 +635,81 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
     setActiveLessonId(lesson.id);
     setPlayerLessonTitle(lesson.title);
     setIsPlayerOpen(true);
+  };
+
+  const openAccessLinkPanel = async (lesson: Lesson) => {
+    setSelectedLessonForLinks(lesson);
+    setAccessLinkForm({ expiresAt: '', maxViews: '1' });
+    setLinkError(null);
+    setLinkSuccess(null);
+    setIsAccessLinkPanelOpen(true);
+
+    try {
+      const res = await fetch(`/api/ec/${schoolSlug}/admin/lessons/${lesson.id}/access-links`);
+      if (!res.ok) throw new Error('Failed to load access links');
+      const data = await res.json();
+      setAccessLinks(data.links || []);
+    } catch (err: any) {
+      console.error(err);
+      setLinkError(err.message || 'Failed to load access links');
+    }
+  };
+
+  const handleCreateAccessLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLessonForLinks) return;
+
+    setIsLinkSubmitting(true);
+    setLinkError(null);
+    setLinkSuccess(null);
+
+    try {
+      const res = await fetch(`/api/ec/${schoolSlug}/admin/lessons/${selectedLessonForLinks.id}/access-links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expiresAt: accessLinkForm.expiresAt,
+          maxViews: Number(accessLinkForm.maxViews),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create access link');
+
+      setAccessLinks((prev) => [data.link, ...prev]);
+      setLinkSuccess(`Link created. Share this URL with the student: /ec/${schoolSlug}/lessons/${selectedLessonForLinks.id}/guest?token=${data.link.token}`);
+      setAccessLinkForm({ expiresAt: '', maxViews: '1' });
+    } catch (err: any) {
+      setLinkError(err.message || 'Unexpected error creating access link');
+    } finally {
+      setIsLinkSubmitting(false);
+    }
+  };
+
+  const handleDeleteAccessLink = async (linkId: string) => {
+    if (!selectedLessonForLinks) return;
+
+    try {
+      const res = await fetch(`/api/ec/${schoolSlug}/admin/lessons/${selectedLessonForLinks.id}/access-links?linkId=${linkId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) throw new Error('Failed to delete access link');
+      setAccessLinks((prev) => prev.filter((link) => link.id !== linkId));
+    } catch (err: any) {
+      setLinkError(err.message || 'Failed to delete access link');
+    }
+  };
+
+  const handleCopyShareLink = async (token: string) => {
+    const shareUrl = `${window.location.origin}/ec/${schoolSlug}/lessons/${selectedLessonForLinks?.id}/guest?token=${encodeURIComponent(token)}`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopiedLink(token);
+      setTimeout(() => setCopiedLink(null), 2000);
+    } catch {
+      setLinkError('Clipboard access was blocked. Please copy the URL manually.');
+    }
   };
 
   const userEmail = session?.user?.email || 'admin@royaljed.com';
@@ -562,7 +727,7 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
           ➕ Add Curriculum Module
         </button>
 
-        {processingLessonIds.length > 0 && (
+        {processingBannerVisible && (
           <div className="ml-auto flex items-center gap-2 text-xs font-semibold text-brandTeal animate-pulse">
             <span className="w-2.5 h-2.5 rounded-full bg-brandTeal" />
             <span>Video processing in progress... Page will auto-update.</span>
@@ -663,8 +828,35 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
                             )}
                           </div>
 
-                          {/* Video action triggers */}
-                          <div className="flex items-center gap-3 flex-shrink-0">
+                          {/* Lesson action triggers */}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openEditLessonModal(lesson)}
+                                title="Edit lesson"
+                                className="w-8 h-8 rounded-full border border-slate/15 bg-white text-brandTealDeep hover:bg-slate-50 transition-colors flex items-center justify-center shadow-sm"
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openAccessLinkPanel(lesson)}
+                                title="Manage secure links"
+                                className="w-8 h-8 rounded-full border border-brandGreen/20 bg-brandGreenSoft text-brandGreenDark hover:bg-brandGreen/20 transition-colors flex items-center justify-center shadow-sm"
+                              >
+                                🔐
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLesson(lesson.id)}
+                                title="Delete lesson"
+                                className="w-8 h-8 rounded-full border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors flex items-center justify-center shadow-sm"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+
                             {lesson.lessonType === 'VIDEO' ? (
                               <>
                                 {lesson.videoStatus === 'READY' && (
@@ -679,16 +871,32 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
                                   <TranscodeProgressIndicator progress={transcodeProgress[lesson.id]} />
                                 )}
                                 {lesson.videoStatus === 'FAILED' && (
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded" title={lesson.videoError || 'Unknown Error'}>
-                                      ❌ Failed
-                                    </span>
-                                    <button
-                                      onClick={() => handleStartUpload(lesson.id)}
-                                      className="rounded-full bg-red-600 hover:bg-red-700 text-white font-medium text-xs px-3.5 py-1.5 transition-colors"
+                                  <div className="flex flex-col items-end gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => handleStartUpload(lesson.id)}
+                                        title="Upload Video"
+                                        className="w-8 h-8 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center transition-colors text-sm shadow-sm"
+                                      >
+                                        📤
+                                      </button>
+                                      <button
+                                        onClick={() => handleStartUpload(lesson.id)}
+                                        className="rounded-full bg-red-600 hover:bg-red-700 text-white font-medium text-xs px-3.5 py-1.5 transition-colors"
+                                      >
+                                        Retry Upload
+                                      </button>
+                                    </div>
+                                    <div
+                                      className="max-w-[240px] rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[11px] text-red-700 shadow-sm"
+                                      role="alert"
+                                      title={lesson.videoError || 'Transcoding failed. Please retry the upload.'}
                                     >
-                                      Retry Upload
-                                    </button>
+                                      <div className="font-semibold">Transcoding failed</div>
+                                      <div className="mt-0.5 text-red-600">
+                                        {lesson.videoError || 'Please retry the upload and try again.'}
+                                      </div>
+                                    </div>
                                   </div>
                                 )}
                                 {(!lesson.videoStatus || lesson.videoStatus === 'PENDING') && (
@@ -775,12 +983,116 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
         </div>
       )}
 
+      {isAccessLinkPanelOpen && selectedLessonForLinks && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-brandTealDeep/60 backdrop-blur-sm" onClick={() => setIsAccessLinkPanelOpen(false)} />
+          <div className="relative z-10 w-full max-w-2xl rounded-lg border border-slate/10 bg-canvas p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate/5 pb-4">
+              <div>
+                <h3 className="text-lg font-bold tracking-tight text-ink">Secure lesson access</h3>
+                <p className="mt-1 text-sm text-slate">Create one-time or expiring links for {selectedLessonForLinks.title}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAccessLinkPanelOpen(false)}
+                className="text-sm text-slate hover:text-ink"
+              >
+                Close
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateAccessLink} className="mt-4 space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate">Expires at</label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={accessLinkForm.expiresAt}
+                    onChange={(e) => setAccessLinkForm((prev) => ({ ...prev, expiresAt: e.target.value }))}
+                    className="w-full rounded border border-slate/20 p-2.5 text-sm focus:border-brandGreen focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate">Max views</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={accessLinkForm.maxViews}
+                    onChange={(e) => setAccessLinkForm((prev) => ({ ...prev, maxViews: e.target.value }))}
+                    className="w-full rounded border border-slate/20 p-2.5 text-sm focus:border-brandGreen focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {linkError && (
+                <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{linkError}</div>
+              )}
+              {linkSuccess && (
+                <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{linkSuccess}</div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 border-t border-slate/5 pt-3">
+                <button
+                  type="submit"
+                  disabled={isLinkSubmitting}
+                  className="rounded-full bg-brandGreen px-5 py-2.5 text-xs font-semibold text-brandTealDeep transition-colors disabled:opacity-60"
+                >
+                  {isLinkSubmitting ? 'Creating...' : 'Create secure link'}
+                </button>
+              </div>
+            </form>
+
+            <div className="mt-6">
+              <h4 className="text-sm font-semibold text-ink">Existing links</h4>
+              {accessLinks.length === 0 ? (
+                <div className="mt-3 rounded border border-dashed border-slate/20 p-4 text-sm text-slate">No secure links created yet for this lesson.</div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {accessLinks.map((link) => (
+                    <div key={link.id} className="rounded border border-slate/15 bg-slate-50/70 p-3 text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="font-medium text-ink">{link.token}</div>
+                          <div className="text-xs text-slate">Views: {link.viewCount}/{link.maxViews}</div>
+                          <div className="text-xs text-slate">Expires: {new Date(link.expiresAt).toLocaleString()}</div>
+                          {link.student && <div className="text-xs text-slate">Student: {link.student.fullName}</div>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyShareLink(link.token)}
+                            className="rounded-full border border-brandGreen/20 bg-brandGreenSoft px-3 py-1.5 text-xs font-medium text-brandGreenDark"
+                          >
+                            {copiedLink === link.token ? 'Copied' : 'Copy URL'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAccessLink(link.id)}
+                            className="rounded-full border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600"
+                          >
+                            Revoke
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 2. Add Lesson Modal */}
       {isLessonModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-brandTealDeep/60 backdrop-blur-sm" onClick={() => setIsLessonModalOpen(false)} />
           <div className="bg-canvas border border-slate/10 rounded-lg shadow-xl max-w-md w-full p-6 relative z-10 font-sans">
-            <h3 className="text-lg font-bold text-ink tracking-tight border-b border-slate/5 pb-3">Add Lesson Content</h3>
+            <h3 className="text-lg font-bold text-ink tracking-tight border-b border-slate/5 pb-3">
+              {editingLessonId ? 'Edit Lesson Content' : 'Add Lesson Content'}
+            </h3>
             <form onSubmit={handleCreateLesson} className="mt-4 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate uppercase tracking-wider mb-1">Parent Module</label>
@@ -858,7 +1170,10 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate/5">
                 <button
                   type="button"
-                  onClick={() => setIsLessonModalOpen(false)}
+                  onClick={() => {
+                    setIsLessonModalOpen(false);
+                    resetLessonForm();
+                  }}
                   className="px-4 py-2 text-xs font-medium text-slate hover:text-ink transition-colors"
                 >
                   Cancel
@@ -867,7 +1182,7 @@ export function CurriculumClient({ schoolId, schoolSlug, initialModules }: Curri
                   type="submit"
                   className="rounded-full bg-brandGreen text-brandTealDeep font-semibold text-xs px-5 py-2.5 transition-colors border border-brandTealDeep/10"
                 >
-                  Save Lesson
+                  {editingLessonId ? 'Update Lesson' : 'Save Lesson'}
                 </button>
               </div>
             </form>

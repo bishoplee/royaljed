@@ -10,12 +10,13 @@ export const STORAGE_ROOT = process.env.STORAGE_DIR
 export const TMP_DIR = path.join(STORAGE_ROOT, 'tmp');
 export const RAW_DIR = path.join(STORAGE_ROOT, 'raw');
 export const HLS_DIR = path.join(STORAGE_ROOT, 'hls');
+export const PRACTICE_DIR = path.join(STORAGE_ROOT, 'practice');
 
 /**
  * Ensures that the required storage directories exist.
  */
 export function ensureStorageDirs() {
-  const dirs = [STORAGE_ROOT, TMP_DIR, RAW_DIR, HLS_DIR];
+  const dirs = [STORAGE_ROOT, TMP_DIR, RAW_DIR, HLS_DIR, PRACTICE_DIR];
   for (const dir of dirs) {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });

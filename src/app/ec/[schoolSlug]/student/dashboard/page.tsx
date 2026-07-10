@@ -1,43 +1,65 @@
-'use client';
-
 import React from 'react';
-import { signOut } from 'next-auth/react';
-import { useParams } from 'next/navigation';
+import { getServerSession } from 'next-auth';
+import { redirect } from 'next/navigation';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import StudentPracticeDashboardClient from './StudentPracticeDashboardClient';
 
-export default function StudentDashboardPlaceholder() {
-  const params = useParams();
-  const schoolSlug = params?.schoolSlug || 'default';
+interface StudentDashboardPageProps {
+  params: Promise<{
+    schoolSlug: string;
+  }>;
+}
+
+export default async function StudentDashboardPage({ params }: StudentDashboardPageProps) {
+  const { schoolSlug } = await params;
+  const slug = schoolSlug.toLowerCase().trim();
+
+  const session = await getServerSession(authOptions);
+  if (!session || !session.user) {
+    redirect('/auth/signin');
+  }
+
+  // Ensure the session user belongs to this tenant unless SUPER_ADMIN
+  if (session.user.role !== 'SUPER_ADMIN' && session.user.schoolSlug !== slug) {
+    redirect(`/ec/${session.user.schoolSlug}/student/dashboard`);
+  }
+
+  const school = await prisma.school.findUnique({ where: { slug } });
+  if (!school) {
+    redirect('/auth/signin');
+  }
+
+  // Fetch lessons for this school (active) with their module title
+  const lessons = await prisma.lesson.findMany({
+    where: {
+      active: true,
+      module: { schoolId: school.id },
+    },
+    include: { module: true },
+    orderBy: { sortOrder: 'asc' },
+  });
+
+  // Count practice sessions for the signed-in student
+  const practiceSessionCount = await prisma.practiceSession.count({
+    where: { studentId: session.user.id as string },
+  });
+
+  const mappedLessons = lessons.map((l) => ({
+    id: l.id,
+    title: l.title,
+    description: l.description,
+    lessonType: l.lessonType,
+    level: l.level,
+    moduleTitle: l.module?.title || '',
+    videoPath: l.videoPath,
+    streamUrl: l.lessonType === 'VIDEO' && l.videoPath ? `/api/ec/${slug}/lessons/${l.id}/stream/index.m3u8` : null,
+  }));
 
   return (
-    <div className="flex flex-col min-h-screen bg-surface font-sans">
-      {/* Header */}
-      <header className="bg-brandTealDeep text-white h-16 flex items-center justify-between px-6 md:px-12 w-full">
-        <span className="font-bold text-sm tracking-tight uppercase">Royaljed Academy - Student Portal</span>
-        <button
-          onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-          className="text-xs font-semibold bg-brandGreen text-brandTealDeep px-4 py-2 rounded-full hover:bg-brandGreen/90 transition-all"
-        >
-          Sign Out
-        </button>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 flex items-center justify-center p-6 text-center">
-        <div className="max-w-md bg-canvas border border-slate/10 p-8 rounded-lg shadow-sm space-y-5">
-          <div className="w-14 h-14 rounded-full bg-brandGreenSoft text-brandGreenDark flex items-center justify-center text-2xl mx-auto">
-            🧑‍🎓
-          </div>
-          <h2 className="text-2xl font-medium tracking-tight text-ink">
-            Student Dashboard
-          </h2>
-          <p className="text-slate text-sm leading-relaxed">
-            The **Royaljed Student Portal** (Phase 7: Assignment Uploads, Record & Compare Shadowing drills) is scheduled for development in a later phase.
-          </p>
-          <div className="pt-4 border-t border-slate/5 text-[11px] text-slate font-medium">
-            Active Tenant Space: <span className="text-brandGreenDark font-bold">{schoolSlug}</span>
-          </div>
-        </div>
-      </main>
+    <div>
+      <StudentPracticeDashboardClient schoolSlug={slug} lessons={mappedLessons} practiceSessionCount={practiceSessionCount} />
     </div>
   );
 }
+
