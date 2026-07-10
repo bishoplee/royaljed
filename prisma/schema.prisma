@@ -1,0 +1,333 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  TUTOR
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum ClassCategory {
+  NURSERY
+  PRIMARY
+  JUNIOR_SECONDARY
+  SENIOR_SECONDARY
+  OTHER
+}
+
+enum Level {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum LessonType {
+  VIDEO
+  AUDIO
+  TEXT
+}
+
+enum SubmissionType {
+  VIDEO
+  AUDIO
+  TEXT
+}
+
+enum SubmissionStatus {
+  SUBMITTED
+  GRADED
+}
+
+// 1. Schools (Tenants)
+model School {
+  id                 String    @id @default(cuid())
+  name               String
+  slug               String    @unique
+  logoUrl            String?   @map("logo_url")
+  brandColor         String?   @default("#001E2B") @map("brand_color")
+  address            String?   @db.Text
+  phone              String?
+  contactEmail       String?   @map("contact_email")
+  website            String?
+  pricingPlan        String?   @default("trial") @map("pricing_plan")
+  subscriptionStatus String?   @default("active") @map("subscription_status")
+  trialEndsAt        DateTime? @map("trial_ends_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  users        User[]
+  classes      Class[]
+  modules      Module[]
+  assignments  Assignment[]
+  auditLogs    AuditLog[]
+  schoolConfig SchoolConfig?
+
+  @@map("schools")
+}
+
+// 2. Users (RBAC)
+model User {
+  id                String     @id @default(cuid())
+  schoolId          String?    @map("school_id")
+  fullName          String     @map("full_name")
+  email             String
+  passwordHash      String     @map("password_hash")
+  phone             String?
+  role              Role
+  status            UserStatus @default(ACTIVE)
+  googleClassroomId String?    @map("google_classroom_id")
+  createdAt         DateTime   @default(now()) @map("created_at")
+
+  // Relations
+  school           School?           @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  classStudents    ClassStudent[]
+  classTutors      ClassTutor[]
+  accessLinks      AccessLink[]
+  submissions      Submission[]
+  grades           Grade[]
+  practiceSessions PracticeSession[]
+  auditLogs        AuditLog[]
+
+  @@unique([email, schoolId], name: "email_school_idx")
+  @@map("users")
+}
+
+// 3. Classes
+model Class {
+  id        String        @id @default(cuid())
+  schoolId  String        @map("school_id")
+  name      String
+  category  ClassCategory
+  sortOrder Int           @default(0) @map("sort_order")
+
+  // Relations
+  school   School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  students ClassStudent[]
+  tutors   ClassTutor[]
+
+  @@map("classes")
+}
+
+// 4. Class Enrollments & Assignments (Junction Tables)
+model ClassStudent {
+  classId   String @map("class_id")
+  studentId String @map("student_id")
+
+  // Relations
+  class   Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  student User  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@id([classId, studentId])
+  @@map("class_students")
+}
+
+model ClassTutor {
+  classId String @map("class_id")
+  tutorId String @map("tutor_id")
+
+  // Relations
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  tutor User  @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+
+  @@id([classId, tutorId])
+  @@map("class_tutors")
+}
+
+// 5. Curriculum Modules
+model Module {
+  id          String   @id @default(cuid())
+  schoolId    String   @map("school_id")
+  title       String
+  description String?  @db.Text
+  level       Level
+  sortOrder   Int      @default(0) @map("sort_order")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  lessons     Lesson[]
+  assignments Assignment[]
+
+  @@map("modules")
+}
+
+// 6. Lessons
+model Lesson {
+  id            String     @id @default(cuid())
+  moduleId      String     @map("module_id")
+  title         String
+  description   String?    @db.Text
+  lessonType    LessonType @map("lesson_type")
+  level         Level
+  videoPath     String?    @map("video_path")
+  videoStatus   String?    @default("PENDING") @map("video_status")
+  videoError    String?    @db.Text @map("video_error")
+  thumbnailUrl  String?    @map("thumbnail_url")
+  transcript    String?    @db.Text
+  isFreePreview Boolean    @default(false) @map("is_free_preview")
+  sortOrder     Int        @default(0) @map("sort_order")
+  active        Boolean    @default(true)
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  // Relations
+  module           Module            @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  accessLinks      AccessLink[]
+  assignments      Assignment[]
+  practiceSessions PracticeSession[]
+
+  @@map("lessons")
+}
+
+// 7. Secure Expirable / One-Time Links
+model AccessLink {
+  id        String   @id @default(cuid())
+  lessonId  String   @map("lesson_id")
+  studentId String?  @map("student_id")
+  token     String   @unique
+  maxViews  Int      @default(1) @map("max_views")
+  viewCount Int      @default(0) @map("view_count")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  lesson  Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  student User?  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("access_links")
+}
+
+// 8. Assignments
+model Assignment {
+  id                 String         @id @default(cuid())
+  schoolId           String         @map("school_id")
+  moduleId           String         @map("module_id")
+  lessonId           String?        @map("lesson_id")
+  title              String
+  description        String?        @db.Text
+  instructions       String?        @db.Text
+  submissionType     SubmissionType @map("submission_type")
+  maxDurationSeconds Int            @default(180) @map("max_duration_seconds")
+  maxAttempts        Int            @default(2) @map("max_attempts")
+  dueDate            DateTime       @map("due_date")
+  rubricJson         Json           @map("rubric_json") // Array of criteria: { name: string, percentage: number, description?: string }
+  active             Boolean        @default(true)
+  createdAt          DateTime       @default(now()) @map("created_at")
+
+  // Relations
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  module      Module       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  lesson      Lesson?      @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  submissions Submission[]
+
+  @@map("assignments")
+}
+
+// 9. Submissions
+model Submission {
+  id            String           @id @default(cuid())
+  assignmentId  String           @map("assignment_id")
+  studentId     String           @map("student_id")
+  attemptNumber Int              @map("attempt_number")
+  filePath      String           @map("file_path")
+  status        SubmissionStatus @default(SUBMITTED)
+  submittedAt   DateTime         @default(now()) @map("submitted_at")
+
+  // Relations
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student    User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  grade      Grade?
+
+  @@map("submissions")
+}
+
+// 10. Grades (Rubric-based)
+model Grade {
+  id                String   @id @default(cuid())
+  submissionId      String   @unique @map("submission_id")
+  tutorId           String   @map("tutor_id")
+  scoresJson        Json     @map("scores_json") // Scores matching rubric criteria: { criteria: string, score: number }
+  percentage        Decimal  @db.Decimal(5, 2)
+  feedbackText      String?  @db.Text @map("feedback_text")
+  feedbackVoicePath String?  @map("feedback_voice_path")
+  gradedAt          DateTime @default(now()) @map("graded_at")
+
+  // Relations
+  submission          Submission           @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  tutor               User                 @relation(fields: [tutorId], references: [id], onDelete: Restrict)
+  timestampedFeedback TimestampedFeedback[]
+
+  @@map("grades")
+}
+
+// 11. Timestamped Feedback
+model TimestampedFeedback {
+  id               String   @id @default(cuid())
+  gradeId          String   @map("grade_id")
+  timestampSeconds Int      @map("timestamp_seconds")
+  comment          String   @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Relations
+  grade Grade @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+
+  @@map("timestamped_feedbacks")
+}
+
+// 12. Student Practice Records
+model PracticeSession {
+  id               String   @id @default(cuid())
+  studentId        String   @map("student_id")
+  lessonId         String   @map("lesson_id")
+  studentAudioPath String   @map("student_audio_path")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  // Relations
+  student User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lesson  Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@map("practice_sessions")
+}
+
+// 13. System Audit Logs & School Configurations
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id")
+  schoolId  String?  @map("school_id")
+  action    String
+  details   String?  @db.Text
+  ipAddress String?  @map("ip_address")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  school School? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model SchoolConfig {
+  schoolId                String    @id @map("school_id")
+  gclassSyncEnabled       Boolean   @default(false) @map("gclass_sync_enabled")
+  autoSyncIntervalHours   Int       @default(24) @map("auto_sync_interval_hours")
+  allowStudentLeaderboard Boolean   @default(true) @map("allow_student_leaderboard")
+  lastSyncTimestamp       DateTime? @map("last_sync_timestamp")
+
+  // Relations
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@map("school_configs")
+}
