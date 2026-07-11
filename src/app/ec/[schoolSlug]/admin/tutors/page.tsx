@@ -60,6 +60,19 @@ export default async function TutorsPage({ params }: TutorsPageProps) {
     },
   });
 
+  const classes = await prisma.class.findMany({
+    where: {
+      schoolId: school.id,
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+    orderBy: {
+      name: 'asc',
+    },
+  });
+
   // Map to match client-side props formatting
   const formattedTutors = tutors.map((t) => ({
     id: t.id,
@@ -83,7 +96,11 @@ export default async function TutorsPage({ params }: TutorsPageProps) {
         </p>
       </div>
 
-      <TutorsRosterClient initialTutors={formattedTutors} schoolSlug={school.slug} />
+      <TutorsRosterClient
+        initialTutors={formattedTutors}
+        availableClasses={classes}
+        schoolSlug={school.slug}
+      />
     </div>
   );
 }

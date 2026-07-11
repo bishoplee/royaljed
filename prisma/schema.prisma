@@ -46,6 +46,7 @@ enum SubmissionType {
 }
 
 enum SubmissionStatus {
+  DRAFT
   SUBMITTED
   GRADED
 }
@@ -117,6 +118,7 @@ model Class {
   school   School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   students ClassStudent[]
   tutors   ClassTutor[]
+  assignments AssignmentClass[]
 
   @@map("classes")
 }
@@ -231,9 +233,23 @@ model Assignment {
   school      School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   module      Module       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   lesson      Lesson?      @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  classes     AssignmentClass[]
   submissions Submission[]
 
   @@map("assignments")
+}
+
+// 8b. Assignment class targeting
+model AssignmentClass {
+  assignmentId String @map("assignment_id")
+  classId      String @map("class_id")
+
+  // Relations
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  class      Class      @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([assignmentId, classId])
+  @@map("assignment_classes")
 }
 
 // 9. Submissions
@@ -242,7 +258,10 @@ model Submission {
   assignmentId  String           @map("assignment_id")
   studentId     String           @map("student_id")
   attemptNumber Int              @map("attempt_number")
-  filePath      String           @map("file_path")
+  filePath      String?          @map("file_path")
+  textContent   String?          @db.Text @map("text_content")
+  originalFileName String?       @map("original_file_name")
+  mimeType      String?          @map("mime_type")
   status        SubmissionStatus @default(SUBMITTED)
   submittedAt   DateTime         @default(now()) @map("submitted_at")
 
@@ -250,6 +269,8 @@ model Submission {
   assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   student    User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
   grade      Grade?
+
+  @@unique([assignmentId, studentId, attemptNumber], name: "assignment_student_attempt_idx")
 
   @@map("submissions")
 }

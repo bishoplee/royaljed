@@ -13,6 +13,9 @@ module.exports = {
         brandGreenSoft: '#E8F8F0',  // Mint background for featured items/success badges
         brandTealDeep: '#001E2B',   // Deep navy/teal for header bands, sidebars, footer
         brandTeal: '#00684A',       // Mid-spectrum teal
+        brandOrange: '#F26A19',     // Primary accent for dashboard actions
+        brandOrangeDark: '#D95B13', // Hover/active state for orange accent
+        brandOrangeSoft: '#FDE9DD', // Soft orange background surfaces
         canvas: '#FFFFFF',          // Clean white page backgrounds
         canvasDark: '#0B1A30',      // Code-block/mockup dark terminal background
         surface: '#F9FBFA',         // Sections and input borders

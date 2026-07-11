@@ -115,12 +115,42 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { name, category, bulkClasses } = body;
+    const { name, category, bulkClasses, tutorIds, studentIds } = body;
 
     // Case 1: Bulk Create
     if (bulkClasses && Array.isArray(bulkClasses)) {
       const created: any[] = [];
       const skipped: string[] = [];
+
+      const normalizedTutorIds = Array.isArray(tutorIds) ? tutorIds : [];
+      const normalizedStudentIds = Array.isArray(studentIds) ? studentIds : [];
+
+      const validTutors = normalizedTutorIds.length
+        ? await prisma.user.findMany({
+            where: {
+              id: { in: normalizedTutorIds },
+              schoolId: school.id,
+              role: 'TUTOR',
+              status: 'ACTIVE',
+            },
+            select: { id: true },
+          })
+        : [];
+
+      const validStudents = normalizedStudentIds.length
+        ? await prisma.user.findMany({
+            where: {
+              id: { in: normalizedStudentIds },
+              schoolId: school.id,
+              role: 'STUDENT',
+              status: 'ACTIVE',
+            },
+            select: { id: true },
+          })
+        : [];
+
+      const validTutorIds = validTutors.map((u) => u.id);
+      const validStudentIds = validStudents.map((u) => u.id);
 
       await prisma.$transaction(async (tx) => {
         for (const item of bulkClasses) {
@@ -148,6 +178,25 @@ export async function POST(
               category: cCategory as ClassCategory,
             },
           });
+
+          if (validTutorIds.length > 0) {
+            await tx.classTutor.createMany({
+              data: validTutorIds.map((tutorId) => ({
+                classId: newClass.id,
+                tutorId,
+              })),
+            });
+          }
+
+          if (validStudentIds.length > 0) {
+            await tx.classStudent.createMany({
+              data: validStudentIds.map((studentId) => ({
+                classId: newClass.id,
+                studentId,
+              })),
+            });
+          }
+
           created.push(newClass);
         }
 
@@ -175,6 +224,36 @@ export async function POST(
       return NextResponse.json({ error: 'Name and category are required' }, { status: 400 });
     }
 
+    const normalizedTutorIds = Array.isArray(tutorIds) ? tutorIds : [];
+    const normalizedStudentIds = Array.isArray(studentIds) ? studentIds : [];
+
+    const validTutors = normalizedTutorIds.length
+      ? await prisma.user.findMany({
+          where: {
+            id: { in: normalizedTutorIds },
+            schoolId: school.id,
+            role: 'TUTOR',
+            status: 'ACTIVE',
+          },
+          select: { id: true },
+        })
+      : [];
+
+    const validStudents = normalizedStudentIds.length
+      ? await prisma.user.findMany({
+          where: {
+            id: { in: normalizedStudentIds },
+            schoolId: school.id,
+            role: 'STUDENT',
+            status: 'ACTIVE',
+          },
+          select: { id: true },
+        })
+      : [];
+
+    const validTutorIds = validTutors.map((u) => u.id);
+    const validStudentIds = validStudents.map((u) => u.id);
+
     // Check duplicate
     const existing = await prisma.class.findFirst({
       where: {
@@ -187,12 +266,34 @@ export async function POST(
       return NextResponse.json({ error: 'Class name already exists under this school' }, { status: 400 });
     }
 
-    const newClass = await prisma.class.create({
-      data: {
-        schoolId: school.id,
-        name: name.trim(),
-        category: category as ClassCategory,
-      },
+    const newClass = await prisma.$transaction(async (tx) => {
+      const createdClass = await tx.class.create({
+        data: {
+          schoolId: school.id,
+          name: name.trim(),
+          category: category as ClassCategory,
+        },
+      });
+
+      if (validTutorIds.length > 0) {
+        await tx.classTutor.createMany({
+          data: validTutorIds.map((tutorId) => ({
+            classId: createdClass.id,
+            tutorId,
+          })),
+        });
+      }
+
+      if (validStudentIds.length > 0) {
+        await tx.classStudent.createMany({
+          data: validStudentIds.map((studentId) => ({
+            classId: createdClass.id,
+            studentId,
+          })),
+        });
+      }
+
+      return createdClass;
     });
 
     await prisma.auditLog.create({

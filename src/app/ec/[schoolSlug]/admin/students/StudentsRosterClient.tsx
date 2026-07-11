@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState } from 'react';
 
 interface ClassData {
   id: string;
@@ -20,11 +19,11 @@ interface StudentData {
 
 interface StudentsRosterClientProps {
   initialStudents: StudentData[];
+  availableClasses: ClassData[];
   schoolSlug: string;
 }
 
-export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRosterClientProps) {
-  const router = useRouter();
+export function StudentsRosterClient({ initialStudents, availableClasses, schoolSlug }: StudentsRosterClientProps) {
   const [students, setStudents] = useState<StudentData[]>(initialStudents);
   const [activeTab, setActiveTab] = useState<'roster' | 'manual' | 'csv'>('roster');
 
@@ -36,10 +35,15 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [createClassId, setCreateClassId] = useState<string | null>(null);
+  const [createClassSearch, setCreateClassSearch] = useState('');
+  const classNameToId = new Map(
+    availableClasses.map((classItem) => [classItem.name.toLowerCase().trim(), classItem.id])
+  );
   
   // CSV Import States
   const [csvText, setCsvText] = useState('');
-  const [csvPreview, setCsvPreview] = useState<{ fullName: string; email: string; phone: string; valid: boolean; errorReason?: string }[]>([]);
+  const [csvPreview, setCsvPreview] = useState<{ fullName: string; email: string; phone: string; className: string; valid: boolean; errorReason?: string }[]>([]);
   const [csvFile, setCsvFile] = useState<File | null>(null);
 
   // Edit Modal States
@@ -47,12 +51,29 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editClassId, setEditClassId] = useState<string | null>(null);
+  const [editClassSearch, setEditClassSearch] = useState('');
 
   // UX Feedback
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [isPending, startTransition] = useTransition();
+
+  const filteredCreateClasses = availableClasses.filter((c) =>
+    c.name.toLowerCase().includes(createClassSearch.toLowerCase())
+  );
+
+  const filteredEditClasses = availableClasses.filter((c) =>
+    c.name.toLowerCase().includes(editClassSearch.toLowerCase())
+  );
+
+  const handleCreateClassToggle = (classId: string) => {
+    setCreateClassId((prev) => (prev === classId ? null : classId));
+  };
+
+  const handleEditClassToggle = (classId: string) => {
+    setEditClassId((prev) => (prev === classId ? null : classId));
+  };
 
   const handleRefresh = async () => {
     try {
@@ -82,6 +103,7 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
           email,
           phone: phone.trim() === '' ? null : phone,
           password: password.trim() === '' ? undefined : password,
+          classId: createClassId,
         }),
       });
 
@@ -98,6 +120,8 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
       setEmail('');
       setPhone('');
       setPassword('');
+      setCreateClassId(null);
+      setCreateClassSearch('');
       setLoading(false);
       setActiveTab('roster');
       handleRefresh();
@@ -151,6 +175,7 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
           fullName: editName,
           email: editEmail,
           phone: editPhone.trim() === '' ? null : editPhone,
+          classId: editClassId,
         }),
       });
 
@@ -190,6 +215,7 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
         const name = cols[0] ? cols[0].trim() : '';
         const emailVal = cols[1] ? cols[1].trim() : '';
         const phoneVal = cols[2] ? cols[2].trim() : '';
+        const classNameVal = cols[3] ? cols[3].trim() : '';
 
         // Validation checks
         let valid = true;
@@ -204,12 +230,16 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
         } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
           valid = false;
           errorReason = 'Invalid Email Format';
+        } else if (classNameVal && !classNameToId.has(classNameVal.toLowerCase())) {
+          valid = false;
+          errorReason = 'Unknown Class Name';
         }
 
         return {
           fullName: name,
           email: emailVal,
           phone: phoneVal,
+          className: classNameVal,
           valid,
           errorReason,
         };
@@ -246,6 +276,7 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
       fullName: p.fullName,
       email: p.email,
       phone: p.phone || null,
+      classId: p.className ? classNameToId.get(p.className.toLowerCase()) : undefined,
     }));
 
     if (validStudents.length === 0) {
@@ -285,6 +316,27 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
       setError('Something went wrong during bulk submission.');
       setLoading(false);
     }
+  };
+
+  const handleDownloadCsvTemplate = () => {
+    const classExamples = availableClasses.slice(0, 2).map((classItem) => classItem.name);
+    const firstClass = classExamples[0] || 'Primary 1A';
+    const secondClass = classExamples[1] || firstClass;
+    const csvTemplate = [
+      'Name,Email,Phone,Class',
+      `Jane Doe,jane.doe@example.com,+2348000000001,${firstClass}`,
+      `John Smith,john.smith@example.com,+2348000000002,${secondClass}`,
+    ].join('\n');
+
+    const blob = new Blob([csvTemplate], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'students-import-template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Search filter matching
@@ -439,6 +491,11 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
                             setEditName(student.fullName);
                             setEditEmail(student.email);
                             setEditPhone(student.phone || '');
+                            if ((student.classes?.length || 0) > 1) {
+                              setError('This student currently has multiple class assignments. Saving will keep only one class.');
+                            }
+                            setEditClassId(student.classes?.[0]?.id || null);
+                            setEditClassSearch('');
                           }}
                           className="text-brandTeal hover:underline font-semibold"
                         >
@@ -537,6 +594,46 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
               />
             </div>
 
+            <div className="border border-slate/10 rounded-lg p-3 bg-surface">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-bold text-ink uppercase tracking-wider">
+                  Assign Class {createClassId ? '(1)' : '(0)'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCreateClassId(null)}
+                  disabled={!createClassId}
+                  className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                >
+                  Clear
+                </button>
+              </div>
+              <input
+                type="text"
+                placeholder="Search classes..."
+                value={createClassSearch}
+                onChange={(e) => setCreateClassSearch(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs border border-slate/20 rounded focus:outline-none focus:border-brandGreenDark bg-canvas text-ink mb-2"
+              />
+              <div className="max-h-44 overflow-y-auto space-y-1">
+                {filteredCreateClasses.map((classItem) => {
+                  const isSelected = createClassId === classItem.id;
+                  return (
+                    <label key={classItem.id} className="flex items-center justify-between p-2 rounded text-xs bg-canvas border border-slate/10 cursor-pointer">
+                      <span className="truncate pr-2">{classItem.name}</span>
+                      <input
+                        type="radio"
+                        name="student-create-class"
+                        checked={isSelected}
+                        onChange={() => handleCreateClassToggle(classItem.id)}
+                        className="w-4 h-4 accent-brandGreen"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
@@ -551,13 +648,22 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
       {/* TAB 3: CSV BATCH IMPORT */}
       {activeTab === 'csv' && (
         <div className="bg-canvas border border-slate/10 rounded-lg p-6 space-y-6">
-          <div className="border-b border-slate/5 pb-3">
-            <h3 className="text-lg font-medium text-ink">
-              Roster CSV Bulk Importer
-            </h3>
-            <p className="text-slate text-xs mt-1">
-              Add multiple students at once. Columns should be formatted as: <strong>Name, Email, Phone</strong>. Headers are ignored automatically.
-            </p>
+          <div className="border-b border-slate/5 pb-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-medium text-ink">
+                Roster CSV Bulk Importer
+              </h3>
+              <p className="text-slate text-xs mt-1">
+                Add multiple students at once. Columns should be formatted as: <strong>Name, Email, Phone, Class</strong>. Headers are ignored automatically.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleDownloadCsvTemplate}
+              className="text-xs font-semibold text-brandGreenDark hover:text-brandTealDeep border border-slate/10 px-3 py-2 rounded-md bg-surface whitespace-nowrap"
+            >
+              Download Sample CSV
+            </button>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -611,6 +717,7 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
                         <div>
                           <p className="font-semibold">{item.fullName || 'Blank Name'}</p>
                           <p className="text-[10px] opacity-75">{item.email || 'Blank Email'}</p>
+                          <p className="text-[10px] opacity-75">{item.className || 'No Class'}</p>
                         </div>
                         <div>
                           {item.valid ? (
@@ -703,6 +810,46 @@ export function StudentsRosterClient({ initialStudents, schoolSlug }: StudentsRo
                   onChange={e => setEditPhone(e.target.value)}
                   className="w-full text-input rounded-md px-3 py-2 text-xs border border-slate/20 focus:outline-none focus:border-brandGreenDark"
                 />
+              </div>
+
+              <div className="border border-slate/10 rounded-lg p-3 bg-surface">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-bold text-ink uppercase tracking-wider">
+                    Assigned Class {editClassId ? '(1)' : '(0)'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setEditClassId(null)}
+                    disabled={!editClassId}
+                    className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search classes..."
+                  value={editClassSearch}
+                  onChange={(e) => setEditClassSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border border-slate/20 rounded focus:outline-none focus:border-brandGreenDark bg-canvas text-ink mb-2"
+                />
+                <div className="max-h-44 overflow-y-auto space-y-1">
+                  {filteredEditClasses.map((classItem) => {
+                    const isSelected = editClassId === classItem.id;
+                    return (
+                      <label key={classItem.id} className="flex items-center justify-between p-2 rounded text-xs bg-canvas border border-slate/10 cursor-pointer">
+                        <span className="truncate pr-2">{classItem.name}</span>
+                        <input
+                          type="radio"
+                          name="student-edit-class"
+                          checked={isSelected}
+                          onChange={() => handleEditClassToggle(classItem.id)}
+                          className="w-4 h-4 accent-brandGreen"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="flex justify-end gap-2.5 pt-2">

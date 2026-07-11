@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState } from 'react';
 
 interface ClassData {
   id: string;
@@ -20,11 +19,11 @@ interface TutorData {
 
 interface TutorsRosterClientProps {
   initialTutors: TutorData[];
+  availableClasses: ClassData[];
   schoolSlug: string;
 }
 
-export function TutorsRosterClient({ initialTutors, schoolSlug }: TutorsRosterClientProps) {
-  const router = useRouter();
+export function TutorsRosterClient({ initialTutors, availableClasses, schoolSlug }: TutorsRosterClientProps) {
   const [tutors, setTutors] = useState<TutorData[]>(initialTutors);
   const [activeTab, setActiveTab] = useState<'roster' | 'manual'>('roster');
 
@@ -36,17 +35,41 @@ export function TutorsRosterClient({ initialTutors, schoolSlug }: TutorsRosterCl
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [createClassIds, setCreateClassIds] = useState<string[]>([]);
+  const [createClassSearch, setCreateClassSearch] = useState('');
 
   // Edit Modal States
   const [editingTutor, setEditingTutor] = useState<TutorData | null>(null);
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editClassIds, setEditClassIds] = useState<string[]>([]);
+  const [editClassSearch, setEditClassSearch] = useState('');
 
   // Feedbacks
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const filteredCreateClasses = availableClasses.filter((c) =>
+    c.name.toLowerCase().includes(createClassSearch.toLowerCase())
+  );
+
+  const filteredEditClasses = availableClasses.filter((c) =>
+    c.name.toLowerCase().includes(editClassSearch.toLowerCase())
+  );
+
+  const handleCreateClassToggle = (classId: string) => {
+    setCreateClassIds((prev) =>
+      prev.includes(classId) ? prev.filter((id) => id !== classId) : [...prev, classId]
+    );
+  };
+
+  const handleEditClassToggle = (classId: string) => {
+    setEditClassIds((prev) =>
+      prev.includes(classId) ? prev.filter((id) => id !== classId) : [...prev, classId]
+    );
+  };
 
   const handleRefresh = async () => {
     try {
@@ -75,6 +98,7 @@ export function TutorsRosterClient({ initialTutors, schoolSlug }: TutorsRosterCl
           email,
           phone: phone.trim() === '' ? null : phone,
           password: password.trim() === '' ? undefined : password,
+          classIds: createClassIds,
         }),
       });
 
@@ -91,6 +115,8 @@ export function TutorsRosterClient({ initialTutors, schoolSlug }: TutorsRosterCl
       setEmail('');
       setPhone('');
       setPassword('');
+      setCreateClassIds([]);
+      setCreateClassSearch('');
       setLoading(false);
       setActiveTab('roster');
       handleRefresh();
@@ -142,6 +168,7 @@ export function TutorsRosterClient({ initialTutors, schoolSlug }: TutorsRosterCl
           fullName: editName,
           email: editEmail,
           phone: editPhone.trim() === '' ? null : editPhone,
+          classIds: editClassIds,
         }),
       });
 
@@ -303,6 +330,8 @@ export function TutorsRosterClient({ initialTutors, schoolSlug }: TutorsRosterCl
                             setEditName(tutor.fullName);
                             setEditEmail(tutor.email);
                             setEditPhone(tutor.phone || '');
+                            setEditClassIds(tutor.classes?.map((c) => c.id) || []);
+                            setEditClassSearch('');
                           }}
                           className="text-brandTeal hover:underline font-semibold"
                         >
@@ -401,6 +430,55 @@ export function TutorsRosterClient({ initialTutors, schoolSlug }: TutorsRosterCl
               />
             </div>
 
+            <div className="border border-slate/10 rounded-lg p-3 bg-surface">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-bold text-ink uppercase tracking-wider">
+                  Assign Classes ({createClassIds.length})
+                </p>
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCreateClassIds((prev) => Array.from(new Set([...prev, ...filteredCreateClasses.map((c) => c.id)])))}
+                    disabled={filteredCreateClasses.length === 0}
+                    className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCreateClassIds((prev) => prev.filter((id) => !filteredCreateClasses.some((c) => c.id === id)))}
+                    disabled={filteredCreateClasses.length === 0}
+                    className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              </div>
+              <input
+                type="text"
+                placeholder="Search classes..."
+                value={createClassSearch}
+                onChange={(e) => setCreateClassSearch(e.target.value)}
+                className="w-full px-3 py-1.5 text-xs border border-slate/20 rounded focus:outline-none focus:border-brandGreenDark bg-canvas text-ink mb-2"
+              />
+              <div className="max-h-44 overflow-y-auto space-y-1">
+                {filteredCreateClasses.map((classItem) => {
+                  const isSelected = createClassIds.includes(classItem.id);
+                  return (
+                    <label key={classItem.id} className="flex items-center justify-between p-2 rounded text-xs bg-canvas border border-slate/10 cursor-pointer">
+                      <span className="truncate pr-2">{classItem.name}</span>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => handleCreateClassToggle(classItem.id)}
+                        className="w-4 h-4 accent-brandGreen"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
@@ -461,6 +539,55 @@ export function TutorsRosterClient({ initialTutors, schoolSlug }: TutorsRosterCl
                   onChange={e => setEditPhone(e.target.value)}
                   className="w-full text-input rounded-md px-3 py-2 text-xs border border-slate/20 focus:outline-none focus:border-brandGreenDark"
                 />
+              </div>
+
+              <div className="border border-slate/10 rounded-lg p-3 bg-surface">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-bold text-ink uppercase tracking-wider">
+                    Assigned Classes ({editClassIds.length})
+                  </p>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditClassIds((prev) => Array.from(new Set([...prev, ...filteredEditClasses.map((c) => c.id)])))}
+                      disabled={filteredEditClasses.length === 0}
+                      className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditClassIds((prev) => prev.filter((id) => !filteredEditClasses.some((c) => c.id === id)))}
+                      disabled={filteredEditClasses.length === 0}
+                      className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search classes..."
+                  value={editClassSearch}
+                  onChange={(e) => setEditClassSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border border-slate/20 rounded focus:outline-none focus:border-brandGreenDark bg-canvas text-ink mb-2"
+                />
+                <div className="max-h-44 overflow-y-auto space-y-1">
+                  {filteredEditClasses.map((classItem) => {
+                    const isSelected = editClassIds.includes(classItem.id);
+                    return (
+                      <label key={classItem.id} className="flex items-center justify-between p-2 rounded text-xs bg-canvas border border-slate/10 cursor-pointer">
+                        <span className="truncate pr-2">{classItem.name}</span>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleEditClassToggle(classItem.id)}
+                          className="w-4 h-4 accent-brandGreen"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="flex justify-end gap-2.5 pt-2">

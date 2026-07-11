@@ -45,6 +45,54 @@ export default async function StudentDashboardPage({ params }: StudentDashboardP
     where: { studentId: session.user.id as string },
   });
 
+  // Fetch practice sessions to compute distinct lessons practiced
+  const studentPracticeSessions = await prisma.practiceSession.findMany({
+    where: { studentId: session.user.id as string },
+    select: { lessonId: true },
+  });
+
+  const lessonsPracticedCount = new Set(studentPracticeSessions.map((s) => s.lessonId)).size;
+
+  // Count submissions (assignments done) for the student
+  const assignmentsDoneCount = await prisma.submission.count({ where: { studentId: session.user.id as string } });
+
+  const studentClassMemberships = await prisma.classStudent.findMany({
+    where: { studentId: session.user.id as string },
+    select: { classId: true },
+  });
+
+  const studentClassIds = studentClassMemberships.map((m) => m.classId);
+
+  const availableAssignments = await prisma.assignment.findMany({
+    where: {
+      schoolId: school.id,
+      active: true,
+      OR: [
+        { classes: { none: {} } },
+        {
+          classes: {
+            some: {
+              classId: { in: studentClassIds },
+            },
+          },
+        },
+      ],
+    },
+    select: {
+      id: true,
+      maxAttempts: true,
+      submissions: {
+        where: { studentId: session.user.id as string },
+        select: { id: true },
+      },
+    },
+  });
+
+  const assignmentsAssignedCount = availableAssignments.length;
+  const assignmentsPendingCount = availableAssignments.filter(
+    (assignment) => assignment.submissions.length < assignment.maxAttempts
+  ).length;
+
   const mappedLessons = lessons.map((l) => ({
     id: l.id,
     title: l.title,
@@ -58,7 +106,17 @@ export default async function StudentDashboardPage({ params }: StudentDashboardP
 
   return (
     <div>
-      <StudentPracticeDashboardClient schoolSlug={slug} lessons={mappedLessons} practiceSessionCount={practiceSessionCount} />
+      <StudentPracticeDashboardClient
+        schoolSlug={slug}
+        lessons={mappedLessons}
+        practiceSessionCount={practiceSessionCount}
+        studentName={session.user.name ?? undefined}
+        studentEmail={session.user.email ?? undefined}
+        lessonsPracticedCount={lessonsPracticedCount}
+        assignmentsDoneCount={assignmentsDoneCount}
+        assignmentsAssignedCount={assignmentsAssignedCount}
+        assignmentsPendingCount={assignmentsPendingCount}
+      />
     </div>
   );
 }

@@ -39,14 +39,24 @@ export function ClassesManagerClient({
   // Single Class Inputs
   const [name, setName] = useState('');
   const [category, setCategory] = useState<'NURSERY' | 'PRIMARY' | 'JUNIOR_SECONDARY' | 'SENIOR_SECONDARY' | 'OTHER'>('PRIMARY');
+  const [createTutorIds, setCreateTutorIds] = useState<string[]>([]);
+  const [createStudentIds, setCreateStudentIds] = useState<string[]>([]);
+  const [createTutorSearch, setCreateTutorSearch] = useState('');
+  const [createStudentSearch, setCreateStudentSearch] = useState('');
 
   // Bulk Class Inputs
   const [bulkPrefix, setBulkPrefix] = useState('');
   const [bulkSuffixes, setBulkSuffixes] = useState('1, 2, 3, 4, 5, 6');
   const [bulkCategory, setBulkCategory] = useState<'NURSERY' | 'PRIMARY' | 'JUNIOR_SECONDARY' | 'SENIOR_SECONDARY' | 'OTHER'>('PRIMARY');
+  const [bulkTutorIds, setBulkTutorIds] = useState<string[]>([]);
+  const [bulkStudentIds, setBulkStudentIds] = useState<string[]>([]);
+  const [bulkTutorSearch, setBulkTutorSearch] = useState('');
+  const [bulkStudentSearch, setBulkStudentSearch] = useState('');
 
   // Roster Manager Modal States
   const [managingClass, setManagingClass] = useState<ClassData | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editCategory, setEditCategory] = useState<'NURSERY' | 'PRIMARY' | 'JUNIOR_SECONDARY' | 'SENIOR_SECONDARY' | 'OTHER'>('PRIMARY');
   const [selectedTutors, setSelectedTutors] = useState<string[]>([]);
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   
@@ -84,7 +94,12 @@ export function ClassesManagerClient({
       const res = await fetch(`/api/ec/${schoolSlug}/admin/classes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, category }),
+        body: JSON.stringify({
+          name,
+          category,
+          tutorIds: createTutorIds,
+          studentIds: createStudentIds,
+        }),
       });
 
       const data = await res.json();
@@ -97,6 +112,10 @@ export function ClassesManagerClient({
 
       setSuccess('Class created successfully!');
       setName('');
+      setCreateTutorIds([]);
+      setCreateStudentIds([]);
+      setCreateTutorSearch('');
+      setCreateStudentSearch('');
       setLoading(false);
       setActiveTab('list');
       handleRefresh();
@@ -131,7 +150,11 @@ export function ClassesManagerClient({
       const res = await fetch(`/api/ec/${schoolSlug}/admin/classes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bulkClasses }),
+        body: JSON.stringify({
+          bulkClasses,
+          tutorIds: bulkTutorIds,
+          studentIds: bulkStudentIds,
+        }),
       });
 
       const data = await res.json();
@@ -144,6 +167,10 @@ export function ClassesManagerClient({
 
       setSuccess(data.message || 'Bulk classes setup successfully!');
       setBulkPrefix('');
+      setBulkTutorIds([]);
+      setBulkStudentIds([]);
+      setBulkTutorSearch('');
+      setBulkStudentSearch('');
       setLoading(false);
       setActiveTab('list');
       handleRefresh();
@@ -158,6 +185,8 @@ export function ClassesManagerClient({
   // Open manage modal
   const openManageModal = (c: ClassData) => {
     setManagingClass(c);
+    setEditName(c.name);
+    setEditCategory(c.category);
     setSelectedTutors(c.tutors.map(t => t.id));
     setSelectedStudents(c.students.map(s => s.id));
     setTutorSearch('');
@@ -177,6 +206,8 @@ export function ClassesManagerClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           classId: managingClass.id,
+          name: editName,
+          category: editCategory,
           tutorIds: selectedTutors,
           studentIds: selectedStudents,
         }),
@@ -214,6 +245,30 @@ export function ClassesManagerClient({
     );
   };
 
+  const handleCreateTutorToggle = (tutorId: string) => {
+    setCreateTutorIds(prev =>
+      prev.includes(tutorId) ? prev.filter(id => id !== tutorId) : [...prev, tutorId]
+    );
+  };
+
+  const handleCreateStudentToggle = (studentId: string) => {
+    setCreateStudentIds(prev =>
+      prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]
+    );
+  };
+
+  const handleBulkTutorToggle = (tutorId: string) => {
+    setBulkTutorIds(prev =>
+      prev.includes(tutorId) ? prev.filter(id => id !== tutorId) : [...prev, tutorId]
+    );
+  };
+
+  const handleBulkStudentToggle = (studentId: string) => {
+    setBulkStudentIds(prev =>
+      prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]
+    );
+  };
+
   // Filters classes based on categories tabs
   const filteredClasses = classes.filter(
     c => categoryFilter === 'ALL' || c.category === categoryFilter
@@ -231,6 +286,41 @@ export function ClassesManagerClient({
       s.fullName.toLowerCase().includes(studentSearch.toLowerCase()) ||
       s.email.toLowerCase().includes(studentSearch.toLowerCase())
   );
+
+  const filteredCreateTutors = allTutors.filter(
+    t =>
+      t.fullName.toLowerCase().includes(createTutorSearch.toLowerCase()) ||
+      t.email.toLowerCase().includes(createTutorSearch.toLowerCase())
+  );
+
+  const filteredCreateStudents = allStudents.filter(
+    s =>
+      s.fullName.toLowerCase().includes(createStudentSearch.toLowerCase()) ||
+      s.email.toLowerCase().includes(createStudentSearch.toLowerCase())
+  );
+
+  const filteredBulkTutors = allTutors.filter(
+    t =>
+      t.fullName.toLowerCase().includes(bulkTutorSearch.toLowerCase()) ||
+      t.email.toLowerCase().includes(bulkTutorSearch.toLowerCase())
+  );
+
+  const filteredBulkStudents = allStudents.filter(
+    s =>
+      s.fullName.toLowerCase().includes(bulkStudentSearch.toLowerCase()) ||
+      s.email.toLowerCase().includes(bulkStudentSearch.toLowerCase())
+  );
+
+  const filteredCreateTutorIds = filteredCreateTutors.map((t) => t.id);
+  const filteredCreateStudentIds = filteredCreateStudents.map((s) => s.id);
+  const filteredBulkTutorIds = filteredBulkTutors.map((t) => t.id);
+  const filteredBulkStudentIds = filteredBulkStudents.map((s) => s.id);
+
+  const addIdsToSelection = (current: string[], idsToAdd: string[]) =>
+    Array.from(new Set([...current, ...idsToAdd]));
+
+  const removeIdsFromSelection = (current: string[], idsToRemove: string[]) =>
+    current.filter((id) => !idsToRemove.includes(id));
 
   return (
     <div className="space-y-6">
@@ -361,7 +451,7 @@ export function ClassesManagerClient({
 
       {/* TAB 2: MANUAL CREATION */}
       {activeTab === 'manual' && (
-        <div className="bg-canvas border border-slate/10 rounded-lg p-6 max-w-xl">
+        <div className="bg-canvas border border-slate/10 rounded-lg p-6 max-w-3xl">
           <h3 className="text-lg font-medium text-ink border-b border-slate/5 pb-3 mb-5">
             Add New Class
           </h3>
@@ -398,6 +488,106 @@ export function ClassesManagerClient({
                 <option value="SENIOR_SECONDARY">Senior Secondary</option>
                 <option value="OTHER">Other</option>
               </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="border border-slate/10 rounded-lg p-3 bg-surface">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-ink uppercase tracking-wider">
+                    Assign Tutors ({createTutorIds.length})
+                  </p>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setCreateTutorIds((prev) => addIdsToSelection(prev, filteredCreateTutorIds))}
+                      disabled={filteredCreateTutorIds.length === 0}
+                      className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateTutorIds((prev) => removeIdsFromSelection(prev, filteredCreateTutorIds))}
+                      disabled={filteredCreateTutorIds.length === 0}
+                      className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search tutors..."
+                  value={createTutorSearch}
+                  onChange={e => setCreateTutorSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border border-slate/20 rounded focus:outline-none focus:border-brandGreenDark bg-canvas text-ink mb-2"
+                />
+                <div className="max-h-44 overflow-y-auto space-y-1">
+                  {filteredCreateTutors.map(tutor => {
+                    const isSelected = createTutorIds.includes(tutor.id);
+                    return (
+                      <label key={tutor.id} className="flex items-center justify-between p-2 rounded text-xs bg-canvas border border-slate/10 cursor-pointer">
+                        <span className="truncate pr-2">{tutor.fullName}</span>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleCreateTutorToggle(tutor.id)}
+                          className="w-4 h-4 accent-brandGreen"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border border-slate/10 rounded-lg p-3 bg-surface">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-ink uppercase tracking-wider">
+                    Enroll Students ({createStudentIds.length})
+                  </p>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setCreateStudentIds((prev) => addIdsToSelection(prev, filteredCreateStudentIds))}
+                      disabled={filteredCreateStudentIds.length === 0}
+                      className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateStudentIds((prev) => removeIdsFromSelection(prev, filteredCreateStudentIds))}
+                      disabled={filteredCreateStudentIds.length === 0}
+                      className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search students..."
+                  value={createStudentSearch}
+                  onChange={e => setCreateStudentSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border border-slate/20 rounded focus:outline-none focus:border-brandGreenDark bg-canvas text-ink mb-2"
+                />
+                <div className="max-h-44 overflow-y-auto space-y-1">
+                  {filteredCreateStudents.map(student => {
+                    const isSelected = createStudentIds.includes(student.id);
+                    return (
+                      <label key={student.id} className="flex items-center justify-between p-2 rounded text-xs bg-canvas border border-slate/10 cursor-pointer">
+                        <span className="truncate pr-2">{student.fullName}</span>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleCreateStudentToggle(student.id)}
+                          className="w-4 h-4 accent-brandGreen"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             <button
@@ -489,6 +679,106 @@ export function ClassesManagerClient({
               </div>
             )}
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="border border-slate/10 rounded-lg p-3 bg-surface">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-ink uppercase tracking-wider">
+                    Assign Tutors To Each Class ({bulkTutorIds.length})
+                  </p>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setBulkTutorIds((prev) => addIdsToSelection(prev, filteredBulkTutorIds))}
+                      disabled={filteredBulkTutorIds.length === 0}
+                      className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBulkTutorIds((prev) => removeIdsFromSelection(prev, filteredBulkTutorIds))}
+                      disabled={filteredBulkTutorIds.length === 0}
+                      className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search tutors..."
+                  value={bulkTutorSearch}
+                  onChange={e => setBulkTutorSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border border-slate/20 rounded focus:outline-none focus:border-brandGreenDark bg-canvas text-ink mb-2"
+                />
+                <div className="max-h-44 overflow-y-auto space-y-1">
+                  {filteredBulkTutors.map(tutor => {
+                    const isSelected = bulkTutorIds.includes(tutor.id);
+                    return (
+                      <label key={tutor.id} className="flex items-center justify-between p-2 rounded text-xs bg-canvas border border-slate/10 cursor-pointer">
+                        <span className="truncate pr-2">{tutor.fullName}</span>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleBulkTutorToggle(tutor.id)}
+                          className="w-4 h-4 accent-brandGreen"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border border-slate/10 rounded-lg p-3 bg-surface">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-ink uppercase tracking-wider">
+                    Enroll Students In Each Class ({bulkStudentIds.length})
+                  </p>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setBulkStudentIds((prev) => addIdsToSelection(prev, filteredBulkStudentIds))}
+                      disabled={filteredBulkStudentIds.length === 0}
+                      className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBulkStudentIds((prev) => removeIdsFromSelection(prev, filteredBulkStudentIds))}
+                      disabled={filteredBulkStudentIds.length === 0}
+                      className="rounded-full border border-slate/20 px-2 py-0.5 text-[10px] font-semibold text-slate hover:bg-canvas disabled:opacity-50"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Search students..."
+                  value={bulkStudentSearch}
+                  onChange={e => setBulkStudentSearch(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border border-slate/20 rounded focus:outline-none focus:border-brandGreenDark bg-canvas text-ink mb-2"
+                />
+                <div className="max-h-44 overflow-y-auto space-y-1">
+                  {filteredBulkStudents.map(student => {
+                    const isSelected = bulkStudentIds.includes(student.id);
+                    return (
+                      <label key={student.id} className="flex items-center justify-between p-2 rounded text-xs bg-canvas border border-slate/10 cursor-pointer">
+                        <span className="truncate pr-2">{student.fullName}</span>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleBulkStudentToggle(student.id)}
+                          className="w-4 h-4 accent-brandGreen"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
             <button
               type="submit"
               disabled={loading || !bulkPrefix.trim()}
@@ -521,6 +811,36 @@ export function ClassesManagerClient({
                 >
                   &times;
                 </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+              <div>
+                <label className="block text-xs font-semibold text-slate uppercase tracking-wider mb-2">
+                  Class Name
+                </label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
+                  className="w-full text-input rounded-md px-3.5 py-2.5 text-sm border border-slate/20 focus:outline-none focus:border-brandGreenDark"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate uppercase tracking-wider mb-2">
+                  Class Category
+                </label>
+                <select
+                  value={editCategory}
+                  onChange={e => setEditCategory(e.target.value as any)}
+                  className="w-full rounded-md px-3.5 py-2.5 text-sm border border-slate/20 focus:outline-none focus:border-brandGreenDark bg-canvas text-ink"
+                >
+                  <option value="NURSERY">Nursery</option>
+                  <option value="PRIMARY">Primary</option>
+                  <option value="JUNIOR_SECONDARY">Junior Secondary</option>
+                  <option value="SENIOR_SECONDARY">Senior Secondary</option>
+                  <option value="OTHER">Other</option>
+                </select>
               </div>
             </div>
 

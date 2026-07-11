@@ -114,7 +114,11 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { fullName, email, phone, password } = body;
+    const { fullName, email, phone, password, classIds } = body;
+
+    const normalizedClassIds = Array.isArray(classIds)
+      ? Array.from(new Set(classIds.map((id: string) => String(id).trim()).filter(Boolean)))
+      : [];
 
     if (!fullName || !email) {
       return NextResponse.json({ error: 'Name and email are required' }, { status: 400 });
@@ -139,16 +143,48 @@ export async function POST(
     const defaultPassword = 'password123';
     const passwordHash = await bcrypt.hash(password || defaultPassword, 10);
 
-    const newTutor = await prisma.user.create({
-      data: {
-        schoolId: school.id,
-        fullName: fullName.trim(),
-        email: emailNormalized,
-        phone: phone ? phone.trim() : null,
-        passwordHash,
-        role: Role.TUTOR,
-        status: UserStatus.ACTIVE,
-      },
+    const validClasses = normalizedClassIds.length
+      ? await prisma.class.findMany({
+          where: {
+            id: { in: normalizedClassIds },
+            schoolId: school.id,
+          },
+          select: { id: true },
+        })
+      : [];
+
+    const validClassIds = validClasses.map((c) => c.id);
+
+    if (normalizedClassIds.length > 0 && validClassIds.length !== normalizedClassIds.length) {
+      return NextResponse.json(
+        { error: 'One or more selected classes are invalid for this school' },
+        { status: 400 }
+      );
+    }
+
+    const newTutor = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          schoolId: school.id,
+          fullName: fullName.trim(),
+          email: emailNormalized,
+          phone: phone ? phone.trim() : null,
+          passwordHash,
+          role: Role.TUTOR,
+          status: UserStatus.ACTIVE,
+        },
+      });
+
+      if (validClassIds.length > 0) {
+        await tx.classTutor.createMany({
+          data: validClassIds.map((classId) => ({
+            classId,
+            tutorId: createdUser.id,
+          })),
+        });
+      }
+
+      return createdUser;
     });
 
     await prisma.auditLog.create({
@@ -208,7 +244,11 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { tutorId, status, fullName, phone, email } = body;
+    const { tutorId, status, fullName, phone, email, classIds } = body;
+
+    const normalizedClassIds = Array.isArray(classIds)
+      ? Array.from(new Set(classIds.map((id: string) => String(id).trim()).filter(Boolean)))
+      : null;
 
     if (!tutorId) {
       return NextResponse.json({ error: 'Tutor ID is required' }, { status: 400 });
@@ -255,9 +295,54 @@ export async function PUT(
       }
     }
 
-    const updated = await prisma.user.update({
-      where: { id: tutorId },
-      data: updateData,
+    const validUpdateClassIds = normalizedClassIds
+      ? normalizedClassIds.length
+        ? (
+            await prisma.class.findMany({
+              where: {
+                id: { in: normalizedClassIds },
+                schoolId: school.id,
+              },
+              select: { id: true },
+            })
+          ).map((c) => c.id)
+        : []
+      : null;
+
+    if (
+      normalizedClassIds &&
+      normalizedClassIds.length > 0 &&
+      validUpdateClassIds &&
+      validUpdateClassIds.length !== normalizedClassIds.length
+    ) {
+      return NextResponse.json(
+        { error: 'One or more selected classes are invalid for this school' },
+        { status: 400 }
+      );
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedTutor = await tx.user.update({
+        where: { id: tutorId },
+        data: updateData,
+      });
+
+      if (validUpdateClassIds) {
+        await tx.classTutor.deleteMany({
+          where: { tutorId },
+        });
+
+        if (validUpdateClassIds.length > 0) {
+          await tx.classTutor.createMany({
+            data: validUpdateClassIds.map((classId) => ({
+              classId,
+              tutorId,
+            })),
+          });
+        }
+      }
+
+      return updatedTutor;
     });
 
     await prisma.auditLog.create({

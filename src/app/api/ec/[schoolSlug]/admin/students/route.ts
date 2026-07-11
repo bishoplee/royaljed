@@ -114,7 +114,20 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { students, fullName, email, phone, password } = body;
+    const { students, fullName, email, phone, password, classId, classIds } = body;
+
+    const normalizedClassIds = Array.isArray(classIds)
+      ? Array.from(new Set(classIds.map((id: string) => String(id).trim()).filter(Boolean)))
+      : typeof classId === 'string' && classId.trim()
+        ? [classId.trim()]
+        : [];
+
+    if (normalizedClassIds.length > 1) {
+      return NextResponse.json(
+        { error: 'A student can only be assigned to one class at a time' },
+        { status: 400 }
+      );
+    }
 
     const defaultPassword = 'password123';
     const defaultPasswordHash = await bcrypt.hash(defaultPassword, 10);
@@ -124,8 +137,27 @@ export async function POST(
       const imported: any[] = [];
       const failed: any[] = [];
 
+      const validClasses = normalizedClassIds.length
+        ? await prisma.class.findMany({
+            where: {
+              id: { in: normalizedClassIds },
+              schoolId: school.id,
+            },
+            select: { id: true },
+          })
+        : [];
+
+      const validClassIds = validClasses.map((c) => c.id);
+
+      if (normalizedClassIds.length > 0 && validClassIds.length !== normalizedClassIds.length) {
+        return NextResponse.json(
+          { error: 'One or more selected classes are invalid for this school' },
+          { status: 400 }
+        );
+      }
+
       for (const item of students) {
-        const { fullName: fName, email: mEmail, phone: pPhone } = item;
+        const { fullName: fName, email: mEmail, phone: pPhone, classId: itemClassId } = item;
 
         if (!fName || !mEmail) {
           failed.push({ email: mEmail || 'N/A', error: 'Missing name or email' });
@@ -148,16 +180,54 @@ export async function POST(
         }
 
         try {
-          const user = await prisma.user.create({
-            data: {
-              schoolId: school.id,
-              fullName: fName.trim(),
-              email: emailNormalized,
-              phone: pPhone ? String(pPhone).trim() : null,
-              passwordHash: defaultPasswordHash,
-              role: Role.STUDENT,
-              status: UserStatus.ACTIVE,
-            },
+          const user = await prisma.$transaction(async (tx) => {
+            const normalizedItemClassId =
+              typeof itemClassId === 'string' && itemClassId.trim() ? itemClassId.trim() : null;
+
+            const assignmentClassIds = normalizedItemClassId
+              ? [normalizedItemClassId]
+              : validClassIds;
+
+            if (assignmentClassIds.length > 1) {
+              throw new Error('A student can only be assigned to one class at a time');
+            }
+
+            if (assignmentClassIds.length === 1) {
+              const classExists = await tx.class.findFirst({
+                where: {
+                  id: assignmentClassIds[0],
+                  schoolId: school.id,
+                },
+                select: { id: true },
+              });
+
+              if (!classExists) {
+                throw new Error('One or more selected classes are invalid for this school');
+              }
+            }
+
+            const createdUser = await tx.user.create({
+              data: {
+                schoolId: school.id,
+                fullName: fName.trim(),
+                email: emailNormalized,
+                phone: pPhone ? String(pPhone).trim() : null,
+                passwordHash: defaultPasswordHash,
+                role: Role.STUDENT,
+                status: UserStatus.ACTIVE,
+              },
+            });
+
+            if (assignmentClassIds.length > 0) {
+              await tx.classStudent.createMany({
+                data: assignmentClassIds.map((classId) => ({
+                  classId,
+                  studentId: createdUser.id,
+                })),
+              });
+            }
+
+            return createdUser;
           });
           imported.push(user);
         } catch (err: any) {
@@ -206,16 +276,48 @@ export async function POST(
 
     const customPassHash = password ? await bcrypt.hash(password, 10) : defaultPasswordHash;
 
-    const newStudent = await prisma.user.create({
-      data: {
-        schoolId: school.id,
-        fullName: fullName.trim(),
-        email: emailNormalized,
-        phone: phone ? phone.trim() : null,
-        passwordHash: customPassHash,
-        role: Role.STUDENT,
-        status: UserStatus.ACTIVE,
-      },
+    const validClasses = normalizedClassIds.length
+      ? await prisma.class.findMany({
+          where: {
+            id: { in: normalizedClassIds },
+            schoolId: school.id,
+          },
+          select: { id: true },
+        })
+      : [];
+
+    const validClassIds = validClasses.map((c) => c.id);
+
+    if (normalizedClassIds.length > 0 && validClassIds.length !== normalizedClassIds.length) {
+      return NextResponse.json(
+        { error: 'One or more selected classes are invalid for this school' },
+        { status: 400 }
+      );
+    }
+
+    const newStudent = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          schoolId: school.id,
+          fullName: fullName.trim(),
+          email: emailNormalized,
+          phone: phone ? phone.trim() : null,
+          passwordHash: customPassHash,
+          role: Role.STUDENT,
+          status: UserStatus.ACTIVE,
+        },
+      });
+
+      if (validClassIds.length > 0) {
+        await tx.classStudent.createMany({
+          data: validClassIds.map((classId) => ({
+            classId,
+            studentId: createdUser.id,
+          })),
+        });
+      }
+
+      return createdUser;
     });
 
     await prisma.auditLog.create({
@@ -275,7 +377,26 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { studentId, status, fullName, phone, email } = body;
+    const { studentId, status, fullName, phone, email, classId, classIds } = body;
+
+    const classIdsProvided =
+      Object.prototype.hasOwnProperty.call(body, 'classId') ||
+      Object.prototype.hasOwnProperty.call(body, 'classIds');
+
+    const normalizedClassIds = classIdsProvided
+      ? Array.isArray(classIds)
+        ? Array.from(new Set(classIds.map((id: string) => String(id).trim()).filter(Boolean)))
+        : typeof classId === 'string' && classId.trim()
+          ? [classId.trim()]
+          : []
+      : null;
+
+    if (normalizedClassIds && normalizedClassIds.length > 1) {
+      return NextResponse.json(
+        { error: 'A student can only be assigned to one class at a time' },
+        { status: 400 }
+      );
+    }
 
     if (!studentId) {
       return NextResponse.json({ error: 'Student ID is required' }, { status: 400 });
@@ -322,9 +443,54 @@ export async function PUT(
       }
     }
 
-    const updated = await prisma.user.update({
-      where: { id: studentId },
-      data: updateData,
+    const validUpdateClassIds = normalizedClassIds
+      ? normalizedClassIds.length
+        ? (
+            await prisma.class.findMany({
+              where: {
+                id: { in: normalizedClassIds },
+                schoolId: school.id,
+              },
+              select: { id: true },
+            })
+          ).map((c) => c.id)
+        : []
+      : null;
+
+    if (
+      normalizedClassIds &&
+      normalizedClassIds.length > 0 &&
+      validUpdateClassIds &&
+      validUpdateClassIds.length !== normalizedClassIds.length
+    ) {
+      return NextResponse.json(
+        { error: 'One or more selected classes are invalid for this school' },
+        { status: 400 }
+      );
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedStudent = await tx.user.update({
+        where: { id: studentId },
+        data: updateData,
+      });
+
+      if (validUpdateClassIds) {
+        await tx.classStudent.deleteMany({
+          where: { studentId },
+        });
+
+        if (validUpdateClassIds.length > 0) {
+          await tx.classStudent.createMany({
+            data: validUpdateClassIds.map((classId) => ({
+              classId,
+              studentId,
+            })),
+          });
+        }
+      }
+
+      return updatedStudent;
     });
 
     await prisma.auditLog.create({

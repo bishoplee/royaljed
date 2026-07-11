@@ -31,7 +31,7 @@ export default async function AdminDashboardPage({ params }: DashboardPageProps)
   }
 
   // Fetch counts in parallel
-  const [studentCount, tutorCount, classCount, practiceCount, recentLogs] = await Promise.all([
+  const [studentCount, tutorCount, classCount, practiceCount, assignmentCount, recentLogs] = await Promise.all([
     prisma.user.count({
       where: {
         schoolId: school.id,
@@ -54,6 +54,12 @@ export default async function AdminDashboardPage({ params }: DashboardPageProps)
         student: {
           schoolId: school.id,
         },
+      },
+    }),
+    prisma.assignment.count({
+      where: {
+        schoolId: school.id,
+        active: true,
       },
     }),
     prisma.auditLog.findMany({
@@ -119,6 +125,18 @@ export default async function AdminDashboardPage({ params }: DashboardPageProps)
       ),
       bg: 'bg-emerald-50',
     },
+    {
+      title: 'Assignments',
+      value: assignmentCount,
+      description: 'Published assessments',
+      href: `/ec/${school.slug}/admin/assignments`,
+      icon: (
+        <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5h6m-7 4h8m-8 4h5m-4 8h10a2 2 0 002-2V5a2 2 0 00-2-2H9a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        </svg>
+      ),
+      bg: 'bg-orange-50',
+    },
   ];
 
   return (
@@ -134,7 +152,7 @@ export default async function AdminDashboardPage({ params }: DashboardPageProps)
       </div>
 
       {/* Metrics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-6">
         {cards.map((card, i) => (
           <div
             key={i}
@@ -198,6 +216,13 @@ export default async function AdminDashboardPage({ params }: DashboardPageProps)
                 className="w-full flex items-center justify-between p-3.5 rounded-lg border border-slate/10 hover:bg-surface text-sm text-ink transition-colors font-medium"
               >
                 <span>🧑‍🏫 Register Tutor Account</span>
+                <span className="text-xs text-slate">&rarr;</span>
+              </Link>
+              <Link
+                href={`/ec/${school.slug}/admin/assignments`}
+                className="w-full flex items-center justify-between p-3.5 rounded-lg border border-slate/10 hover:bg-surface text-sm text-ink transition-colors font-medium"
+              >
+                <span>📝 Manage Assignments</span>
                 <span className="text-xs text-slate">&rarr;</span>
               </Link>
               <Link
