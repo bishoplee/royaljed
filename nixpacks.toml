@@ -1,4 +1,0 @@
-# Nixpacks configuration for Railway deployment
-# This installs FFmpeg in the builder container alongside Node.js
-[phases.setup]
-nixPkgs = ["...", "ffmpeg"]
