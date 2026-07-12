@@ -2,5 +2,10 @@
   "$schema": "https://schema.railpack.com",
   "packages": {
     "ffmpeg": "latest"
+  },
+  "steps": {
+    "install": {
+      "commands": ["npm install"]
+    }
   }
 }
