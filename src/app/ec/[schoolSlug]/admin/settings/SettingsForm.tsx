@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 interface SchoolConfigData {
   gclassSyncEnabled: boolean;
   allowStudentLeaderboard: boolean;
+  googleRefreshToken?: string | null;
 }
 
 interface SchoolData {
@@ -20,6 +21,14 @@ interface SchoolData {
   website: string | null;
   schoolConfig: SchoolConfigData | null;
 }
+
+const resolveLogoUrl = (url: string | null | undefined): string => {
+  if (!url) return '';
+  if (url.startsWith('/uploads/logos/')) {
+    return url.replace('/uploads/logos/', '/api/uploads/logos/');
+  }
+  return url;
+};
 
 interface SettingsFormProps {
   school: SchoolData;
@@ -45,8 +54,92 @@ export function SettingsForm({ school }: SettingsFormProps) {
 
   // States
   const [loading, setLoading] = useState(false);
+  const [syncingRosters, setSyncingRosters] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(!!school.schoolConfig?.googleRefreshToken);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Auto Sync display toggle (visually hidden by default)
+  const [showAutoSync, setShowAutoSync] = useState(false);
+
+  // Logo upload state
+  const [logoMode, setLogoMode] = useState<'url' | 'upload'>(
+    school.logoUrl && (school.logoUrl.startsWith('http://') || school.logoUrl.startsWith('https://')) ? 'url' : 'upload'
+  );
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+
+  // Toasts state
+  const [toasts, setToasts] = useState<{ id: string; type: 'success' | 'error' | 'warning' | 'info'; message: string }[]>([]);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingLogo(true);
+    setError('');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`/api/ec/${school.slug}/admin/settings/upload-logo`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to upload logo.');
+
+      setLogoUrl(data.url);
+      showToast('success', 'Logo image uploaded successfully!');
+    } catch (err: any) {
+      showToast('error', err.message || 'Failed to upload logo.');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+
+  const showToast = (type: 'success' | 'error' | 'warning' | 'info', message: string) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 15000);
+  };
+
+
+  const handleConnectGoogle = () => {
+    window.location.href = `/api/ec/${school.slug}/admin/google/auth`;
+  };
+
+  const handleSyncRosters = async () => {
+    setSyncingRosters(true);
+    try {
+      const res = await fetch(`/api/ec/${school.slug}/admin/google/sync-roster`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to sync rosters.');
+      
+      if (data.syncedClassesCount === 0) {
+        showToast(
+          'warning',
+          `Google Classroom synced, but no active courses were found. Check your Classroom courses.`
+        );
+      } else {
+        showToast(
+          'success',
+          `Google Classroom roster synced! Synced ${data.syncedClassesCount} classes, added ${data.totalStudentsAdded} students, total ${data.totalStudentsSynced} active enrollments.`
+        );
+      }
+    } catch (err: any) {
+      showToast('error', err.message || 'Failed to sync rosters.');
+    } finally {
+      setSyncingRosters(false);
+    }
+  };
+
 
   const colorPresets = [
     { name: 'Deep Teal', value: '#001E2B' },
@@ -159,20 +252,92 @@ export function SettingsForm({ school }: SettingsFormProps) {
           </div>
 
           <div>
-            <label htmlFor="logoUrl" className="block text-xs font-semibold text-slate uppercase tracking-wider mb-2">
-              Logo Image URL
-            </label>
-            <input
-              id="logoUrl"
-              type="url"
-              value={logoUrl}
-              onChange={(e) => setLogoUrl(e.target.value)}
-              placeholder="e.g. https://example.com/logo.png"
-              className="w-full text-input rounded-md px-3.5 py-2.5 text-sm border border-slate/20 focus:outline-none focus:border-brandGreenDark transition-all"
-            />
-            <p className="text-[10px] text-slate mt-1.5 leading-normal">
-              Provide an absolute link to your school logo image. Recommends aspect ratio 1:1.
-            </p>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-semibold text-slate uppercase tracking-wider">
+                School Logo
+              </label>
+              
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-md text-[10px] font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setLogoMode('upload')}
+                  className={`px-2.5 py-1 rounded-md transition-all ${
+                    logoMode === 'upload'
+                      ? 'bg-white dark:bg-slate-700 text-ink shadow-sm'
+                      : 'text-slate hover:text-ink'
+                  }`}
+                >
+                  Upload File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLogoMode('url')}
+                  className={`px-2.5 py-1 rounded-md transition-all ${
+                    logoMode === 'url'
+                      ? 'bg-white dark:bg-slate-700 text-ink shadow-sm'
+                      : 'text-slate hover:text-ink'
+                  }`}
+                >
+                  Image URL
+                </button>
+              </div>
+            </div>
+
+            {logoMode === 'upload' ? (
+              <div className="border-2 border-dashed border-slate/20 rounded-md p-4 flex flex-col items-center justify-center bg-surface transition-all hover:border-slate/45 min-h-[96px]">
+                {logoUrl && !logoUrl.startsWith('http') ? (
+                  <div className="flex items-center gap-3 w-full">
+                    <img
+                      src={resolveLogoUrl(logoUrl)}
+                      alt="Current logo"
+                      className="w-12 h-12 rounded-md object-cover border border-slate/10 bg-white"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-ink truncate">{logoUrl.split('/').pop()}</p>
+                      <p className="text-[10px] text-slate">Local uploaded logo</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setLogoUrl('')}
+                      className="text-xs text-red-500 hover:underline font-semibold"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center space-y-2">
+                    <div className="text-slate text-xl">📁</div>
+                    <label className="block">
+                      <span className="text-xs font-semibold text-brandTealDeep hover:underline cursor-pointer">
+                        {uploadingLogo ? 'Uploading...' : 'Choose image file'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingLogo}
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    <p className="text-[9px] text-slate">PNG, JPG, WEBP, or SVG up to 2MB</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div>
+                <input
+                  id="logoUrl"
+                  type="url"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="e.g. https://example.com/logo.png"
+                  className="w-full text-input rounded-md px-3.5 py-2.5 text-sm border border-slate/20 focus:outline-none focus:border-brandGreenDark transition-all"
+                />
+                <p className="text-[10px] text-slate mt-1.5 leading-normal">
+                  Provide an absolute web link to your school logo image. Aspect ratio 1:1 recommended.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Color Selectors */}
@@ -320,25 +485,93 @@ export function SettingsForm({ school }: SettingsFormProps) {
           </div>
 
           <div className="flex items-start justify-between border-t border-slate/5 pt-6">
-            <div className="max-w-[80%]">
-              <h4 className="text-sm font-semibold text-ink">Google Classroom Sync Hook (Placeholder)</h4>
+            <div className="max-w-[70%]">
+              <h4 className="text-sm font-semibold text-ink flex items-center gap-2">
+                Google Classroom Integration
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    googleConnected
+                      ? 'bg-brandGreenSoft text-brandGreenDark border border-brandGreenDark/10'
+                      : 'bg-slate-100 text-slate-500 border border-slate-200'
+                  }`}
+                >
+                  {googleConnected ? 'Connected' : 'Not Connected'}
+                </span>
+              </h4>
               <p className="text-xs text-slate mt-1 leading-normal">
-                Syncs course rosters and classroom grades automatically every 24 hours. (Google token flows are configured in Phase 9).
+                {googleConnected
+                  ? 'Your school is linked to Google Classroom. You can sync rosters and auto-push grades.'
+                  : 'Link your school to a Google Classroom account to manage rosters and grades.'}
               </p>
+              
+              {googleConnected && (
+                <button
+                  type="button"
+                  onClick={handleSyncRosters}
+                  disabled={syncingRosters}
+                  className="mt-3 text-xs bg-brandTealDeep text-white border border-brandTealDeep/20 px-4 py-2 rounded-full hover:bg-brandTealDeep/90 disabled:opacity-50 transition-all font-semibold flex items-center gap-1.5"
+                >
+                  {syncingRosters ? (
+                    <>
+                      <svg className="animate-spin h-3 w-3 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Syncing Rosters...
+                    </>
+                  ) : (
+                    'Sync Classroom Rosters'
+                  )}
+                </button>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => setGclassSyncEnabled(!gclassSyncEnabled)}
-              className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
-                gclassSyncEnabled ? 'bg-brandGreen' : 'bg-slate-300'
-              }`}
-            >
-              <div
-                className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform duration-200 ${
-                  gclassSyncEnabled ? 'translate-x-6' : 'translate-x-0'
-                }`}
-              />
-            </button>
+            {!googleConnected ? (
+              <button
+                type="button"
+                onClick={handleConnectGoogle}
+                className="bg-brandGreen text-brandTealDeep px-4 py-2 rounded-full hover:bg-brandGreen/90 transition-all text-xs font-bold"
+              >
+                Connect Account
+              </button>
+            ) : (
+              <div className="flex flex-col items-end gap-2">
+                {!showAutoSync ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAutoSync(true)}
+                    className="text-xs bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-ink px-3 py-1.5 rounded-full transition-all font-semibold"
+                  >
+                    Configure Auto Sync
+                  </button>
+                ) : (
+                  <div className="flex flex-col items-end gap-2 p-3 bg-surface border border-slate/10 rounded-md animate-toast-in">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate font-medium">Auto Sync (24h)</span>
+                      <button
+                        type="button"
+                        onClick={() => setGclassSyncEnabled(!gclassSyncEnabled)}
+                        className={`w-12 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-200 ${
+                          gclassSyncEnabled ? 'bg-brandGreen' : 'bg-slate-300'
+                        }`}
+                      >
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform duration-200 ${
+                            gclassSyncEnabled ? 'translate-x-6' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAutoSync(false)}
+                      className="text-[10px] text-brandTealDeep hover:underline font-semibold"
+                    >
+                      Hide sync settings
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -385,7 +618,7 @@ export function SettingsForm({ school }: SettingsFormProps) {
             >
               <div className="flex items-center gap-1.5">
                 {logoUrl ? (
-                  <img src={logoUrl} alt="Logo" className="w-5 h-5 rounded-full object-cover" />
+                  <img src={resolveLogoUrl(logoUrl)} alt="Logo" className="w-5 h-5 rounded-full object-cover" />
                 ) : (
                   <div className="w-5 h-5 rounded-full bg-brandGreen flex items-center justify-center font-bold text-brandTealDeep text-[8px]">
                     {name.charAt(0)}
@@ -441,6 +674,68 @@ export function SettingsForm({ school }: SettingsFormProps) {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Custom Styles for Entry Animations */}
+      <style>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(-1rem);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        .animate-toast-in {
+          animation: slideIn 0.2s ease-out forwards;
+        }
+      `}</style>
+
+      {/* Toast Notification Container */}
+      <div className="fixed bottom-5 left-5 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`p-4 rounded-lg shadow-lg border text-xs font-medium flex gap-3 items-start pointer-events-auto animate-toast-in transition-all duration-300 bg-white dark:bg-slate-900 ${
+              toast.type === 'success'
+                ? 'border-l-4 border-l-brandGreen border-slate-200 dark:border-slate-800 text-ink'
+                : toast.type === 'error'
+                ? 'border-l-4 border-l-red-500 border-slate-200 dark:border-slate-800 text-ink'
+                : toast.type === 'warning'
+                ? 'border-l-4 border-l-yellow-500 border-slate-200 dark:border-slate-800 text-ink'
+                : 'border-l-4 border-l-blue-500 border-slate-200 dark:border-slate-800 text-ink'
+            }`}
+          >
+            <span
+              className={`text-sm select-none font-bold ${
+                toast.type === 'success'
+                  ? 'text-brandGreen'
+                  : toast.type === 'error'
+                  ? 'text-red-500'
+                  : toast.type === 'warning'
+                  ? 'text-yellow-500'
+                  : 'text-blue-500'
+              }`}
+            >
+              {toast.type === 'success' && '✓'}
+              {toast.type === 'error' && '✕'}
+              {toast.type === 'warning' && '⚠'}
+              {toast.type === 'info' && 'ℹ'}
+            </span>
+            <div className="flex-1">
+              <p className="leading-relaxed">{toast.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-350 transition-colors ml-2 font-bold"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
       </div>
     </form>
   );

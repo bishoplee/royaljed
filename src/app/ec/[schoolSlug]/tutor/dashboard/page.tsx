@@ -1,43 +1,137 @@
-'use client';
+import { getServerSession } from 'next-auth';
+import { redirect, notFound } from 'next/navigation';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import TutorDashboardClient from './TutorDashboardClient';
 
-import React from 'react';
-import { signOut } from 'next-auth/react';
-import { useParams } from 'next/navigation';
+interface TutorDashboardPageProps {
+  params: Promise<{
+    schoolSlug: string;
+  }>;
+}
 
-export default function TutorDashboardPlaceholder() {
-  const params = useParams();
-  const schoolSlug = params?.schoolSlug || 'default';
+export default async function TutorDashboardPage({ params }: TutorDashboardPageProps) {
+  const { schoolSlug } = await params;
+  const slug = schoolSlug.toLowerCase().trim();
+
+  const session = await getServerSession(authOptions);
+  if (!session?.user) {
+    redirect('/auth/signin');
+  }
+
+  if (session.user.role !== 'TUTOR' && session.user.role !== 'SUPER_ADMIN') {
+    redirect(`/ec/${session.user.schoolSlug}/student/dashboard`);
+  }
+
+  if (session.user.role !== 'SUPER_ADMIN' && session.user.schoolSlug !== slug) {
+    redirect(`/ec/${session.user.schoolSlug}/tutor/dashboard`);
+  }
+
+  const school = await prisma.school.findUnique({ where: { slug } });
+  if (!school) {
+    notFound();
+  }
+
+  const tutorVisibilityFilter =
+    session.user.role === 'SUPER_ADMIN'
+      ? {}
+      : {
+          OR: [
+            { classes: { none: {} } },
+            {
+              classes: {
+                some: {
+                  class: {
+                    tutors: {
+                      some: {
+                        tutorId: session.user.id,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        };
+
+  const submissions = await prisma.submission.findMany({
+    where: {
+      assignment: {
+        schoolId: school.id,
+        ...tutorVisibilityFilter,
+      },
+      status: {
+        in: ['SUBMITTED', 'GRADED'],
+      },
+    },
+    include: {
+      student: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+        },
+      },
+      assignment: {
+        select: {
+          id: true,
+          title: true,
+          submissionType: true,
+          dueDate: true,
+          classes: {
+            include: {
+              class: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      grade: {
+        select: {
+          id: true,
+          percentage: true,
+          gradedAt: true,
+        },
+      },
+    },
+    orderBy: [{ status: 'asc' }, { submittedAt: 'desc' }],
+    take: 200,
+  });
 
   return (
-    <div className="flex flex-col min-h-screen bg-surface font-sans">
-      {/* Header */}
-      <header className="bg-brandTealDeep text-white h-16 flex items-center justify-between px-6 md:px-12 w-full">
-        <span className="font-bold text-sm tracking-tight uppercase">Royaljed Academy - Tutor Portal</span>
-        <button
-          onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-          className="text-xs font-semibold bg-brandGreen text-brandTealDeep px-4 py-2 rounded-full hover:bg-brandGreen/90 transition-all"
-        >
-          Sign Out
-        </button>
-      </header>
-
-      {/* Main Content */}
-      <main className="flex-1 flex items-center justify-center p-6 text-center">
-        <div className="max-w-md bg-canvas border border-slate/10 p-8 rounded-lg shadow-sm space-y-5">
-          <div className="w-14 h-14 rounded-full bg-brandGreenSoft text-brandGreenDark flex items-center justify-center text-2xl mx-auto">
-            🧑‍🏫
-          </div>
-          <h2 className="text-2xl font-medium tracking-tight text-ink">
-            Tutor Dashboard
-          </h2>
-          <p className="text-slate text-sm leading-relaxed">
-            The **Royaljed Tutor Portal** (Phase 8: Grading, Rubrics & Timeline Assessments) is currently scheduled for development in a later phase. 
-          </p>
-          <div className="pt-4 border-t border-slate/5 text-[11px] text-slate font-medium">
-            Active Tenant Space: <span className="text-brandGreenDark font-bold">{schoolSlug}</span>
-          </div>
-        </div>
-      </main>
-    </div>
+    <TutorDashboardClient
+      schoolSlug={slug}
+      schoolName={school.name}
+      initialSubmissions={submissions.map((submission) => ({
+        id: submission.id,
+        status: submission.status,
+        attemptNumber: submission.attemptNumber,
+        submittedAt: submission.submittedAt.toISOString(),
+        student: {
+          id: submission.student.id,
+          fullName: submission.student.fullName,
+          email: submission.student.email,
+        },
+        assignment: {
+          id: submission.assignment.id,
+          title: submission.assignment.title,
+          submissionType: submission.assignment.submissionType,
+          dueDate: submission.assignment.dueDate.toISOString(),
+          classNames: submission.assignment.classes.map((entry) => entry.class.name),
+          classIds: submission.assignment.classes.map((entry) => entry.class.id),
+        },
+        grade: submission.grade
+          ? {
+              id: submission.grade.id,
+              percentage: Number(submission.grade.percentage),
+              gradedAt: submission.grade.gradedAt.toISOString(),
+            }
+          : null,
+      }))}
+    />
   );
 }

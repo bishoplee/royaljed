@@ -3,6 +3,7 @@ import { redirect, notFound } from 'next/navigation';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import AssignmentSubmissionClient from '@/components/student/AssignmentSubmissionClient';
+import SubmissionFeedbackCard from '@/components/student/SubmissionFeedbackCard';
 
 interface AssignmentDetailPageProps {
   params: Promise<{
@@ -64,6 +65,24 @@ export default async function AssignmentDetailPage({ params }: AssignmentDetailP
       submissions: {
         where: { studentId },
         orderBy: { attemptNumber: 'desc' },
+        include: {
+          grade: {
+            include: {
+              tutor: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                },
+              },
+              timestampedFeedback: {
+                orderBy: {
+                  timestampSeconds: 'asc',
+                },
+              },
+            },
+          },
+        },
       },
     },
   });
@@ -109,17 +128,40 @@ export default async function AssignmentDetailPage({ params }: AssignmentDetailP
             <h2 className="text-xl font-semibold tracking-tight">Previous submissions</h2>
             <div className="mt-4 space-y-3">
               {assignment.submissions.map((submission) => (
-                <article key={submission.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <strong className="text-slate-900">Attempt #{submission.attemptNumber}</strong>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      {submission.status}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-slate-600">Submitted at {submission.submittedAt.toLocaleString()}</p>
-                  {submission.textContent ? <p className="mt-3 whitespace-pre-wrap text-slate-700">{submission.textContent}</p> : null}
-                  {submission.originalFileName ? <p className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-500">File: {submission.originalFileName}</p> : null}
-                </article>
+                <SubmissionFeedbackCard
+                  key={submission.id}
+                  schoolSlug={slug}
+                  assignmentId={assignment.id}
+                  submissionType={assignment.submissionType}
+                  submission={{
+                    id: submission.id,
+                    attemptNumber: submission.attemptNumber,
+                    status: submission.status,
+                    submittedAt: submission.submittedAt,
+                    textContent: submission.textContent,
+                    originalFileName: submission.originalFileName,
+                    mimeType: submission.mimeType,
+                    grade: submission.grade
+                      ? {
+                          id: submission.grade.id,
+                          scoresJson: submission.grade.scoresJson,
+                          percentage: Number(submission.grade.percentage),
+                          feedbackText: submission.grade.feedbackText,
+                          gradedAt: submission.grade.gradedAt,
+                          tutor: {
+                            id: submission.grade.tutor.id,
+                            fullName: submission.grade.tutor.fullName,
+                            email: submission.grade.tutor.email,
+                          },
+                          timestampedFeedback: submission.grade.timestampedFeedback.map((entry) => ({
+                            id: entry.id,
+                            timestampSeconds: entry.timestampSeconds,
+                            comment: entry.comment,
+                          })),
+                        }
+                      : null,
+                  }}
+                />
               ))}
               {assignment.submissions.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">

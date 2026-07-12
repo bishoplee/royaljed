@@ -113,6 +113,7 @@ model Class {
   name      String
   category  ClassCategory
   sortOrder Int           @default(0) @map("sort_order")
+  googleCourseId String?  @map("google_course_id")
 
   // Relations
   school   School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
@@ -227,6 +228,7 @@ model Assignment {
   dueDate            DateTime       @map("due_date")
   rubricJson         Json           @map("rubric_json") // Array of criteria: { name: string, percentage: number, description?: string }
   active             Boolean        @default(true)
+  googleCourseWorkId String?        @map("google_course_work_id")
   createdAt          DateTime       @default(now()) @map("created_at")
 
   // Relations
@@ -346,6 +348,7 @@ model SchoolConfig {
   autoSyncIntervalHours   Int       @default(24) @map("auto_sync_interval_hours")
   allowStudentLeaderboard Boolean   @default(true) @map("allow_student_leaderboard")
   lastSyncTimestamp       DateTime? @map("last_sync_timestamp")
+  googleRefreshToken      String?   @map("google_refresh_token") @db.Text
 
   // Relations
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)

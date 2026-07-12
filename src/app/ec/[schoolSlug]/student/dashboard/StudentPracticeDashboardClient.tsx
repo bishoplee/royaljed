@@ -795,7 +795,14 @@ export default function StudentPracticeDashboardClient({
                 </div>
               </div>
 
-              <div className="mt-4 flex justify-end">
+              <div className="mt-4 flex justify-end gap-3">
+                <a
+                  href={`/api/ec/${schoolSlug}/student/reports/progress`}
+                  download
+                  className="rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700 transition"
+                >
+                  Download Progress Report (PDF)
+                </a>
                 <button
                   type="button"
                   onClick={actionSubmitAssignment}

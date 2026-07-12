@@ -74,6 +74,7 @@ export async function GET(
       sortOrder: c.sortOrder,
       students: c.students.map((cs) => cs.student),
       tutors: c.tutors.map((ct) => ct.tutor),
+      googleCourseId: c.googleCourseId,
     }));
 
     return NextResponse.json(formatted);
@@ -347,7 +348,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { classId, name, category, tutorIds, studentIds } = body;
+    const { classId, name, category, tutorIds, studentIds, googleCourseId } = body;
 
     if (!classId) {
       return NextResponse.json({ error: 'Class ID is required' }, { status: 400 });
@@ -371,6 +372,9 @@ export async function PUT(
       const updateData: any = {};
       if (name) updateData.name = name.trim();
       if (category) updateData.category = category;
+      if (googleCourseId !== undefined) {
+        updateData.googleCourseId = googleCourseId;
+      }
 
       const updatedClass = await tx.class.update({
         where: { id: classId },

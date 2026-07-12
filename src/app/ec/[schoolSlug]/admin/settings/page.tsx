@@ -29,6 +29,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
         select: {
           gclassSyncEnabled: true,
           allowStudentLeaderboard: true,
+          googleRefreshToken: true,
         },
       },
     },

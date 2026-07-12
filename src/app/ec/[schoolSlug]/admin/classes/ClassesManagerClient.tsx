@@ -16,6 +16,7 @@ interface ClassData {
   sortOrder: number;
   students: UserItem[];
   tutors: UserItem[];
+  googleCourseId?: string | null;
 }
 
 interface ClassesManagerClientProps {
@@ -57,12 +58,29 @@ export function ClassesManagerClient({
   const [managingClass, setManagingClass] = useState<ClassData | null>(null);
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState<'NURSERY' | 'PRIMARY' | 'JUNIOR_SECONDARY' | 'SENIOR_SECONDARY' | 'OTHER'>('PRIMARY');
+  const [editGoogleCourseId, setEditGoogleCourseId] = useState('');
   const [selectedTutors, setSelectedTutors] = useState<string[]>([]);
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [googleCourses, setGoogleCourses] = useState<{ id: string; name: string; section?: string }[]>([]);
+
   // Search state inside Modal
   const [tutorSearch, setTutorSearch] = useState('');
   const [studentSearch, setStudentSearch] = useState('');
+
+  // Fetch Google Courses for mapping dropdown
+  React.useEffect(() => {
+    fetch(`/api/ec/${schoolSlug}/admin/google/courses`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.connected) {
+          setGoogleConnected(true);
+          setGoogleCourses(data.courses || []);
+        }
+      })
+      .catch((err) => console.error('Failed to load Google courses:', err));
+  }, [schoolSlug]);
 
   // UX feedbacks
   const [loading, setLoading] = useState(false);
@@ -187,6 +205,7 @@ export function ClassesManagerClient({
     setManagingClass(c);
     setEditName(c.name);
     setEditCategory(c.category);
+    setEditGoogleCourseId(c.googleCourseId || '');
     setSelectedTutors(c.tutors.map(t => t.id));
     setSelectedStudents(c.students.map(s => s.id));
     setTutorSearch('');
@@ -210,6 +229,7 @@ export function ClassesManagerClient({
           category: editCategory,
           tutorIds: selectedTutors,
           studentIds: selectedStudents,
+          googleCourseId: editGoogleCourseId || null,
         }),
       });
 
@@ -814,7 +834,7 @@ export function ClassesManagerClient({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
               <div>
                 <label className="block text-xs font-semibold text-slate uppercase tracking-wider mb-2">
                   Class Name
@@ -841,6 +861,29 @@ export function ClassesManagerClient({
                   <option value="SENIOR_SECONDARY">Senior Secondary</option>
                   <option value="OTHER">Other</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate uppercase tracking-wider mb-2">
+                  Google Classroom Link
+                </label>
+                {googleConnected ? (
+                  <select
+                    value={editGoogleCourseId}
+                    onChange={e => setEditGoogleCourseId(e.target.value)}
+                    className="w-full rounded-md px-3.5 py-2.5 text-sm border border-slate/20 focus:outline-none focus:border-brandGreenDark bg-canvas text-ink"
+                  >
+                    <option value="">&lt; No Link / Local Only &gt;</option>
+                    {googleCourses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.section ? `(${c.section})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="w-full rounded-md border border-slate/10 px-3.5 py-2.5 text-xs text-slate-500 bg-slate-50 italic">
+                    Not connected in School Settings.
+                  </div>
+                )}
               </div>
             </div>
 

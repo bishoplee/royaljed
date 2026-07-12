@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { refreshGoogleAccessToken } from '@/lib/googleClassroom';
 
 const ASSIGNMENT_CREATE_WINDOW_MS = 60 * 1000;
 const ASSIGNMENT_CREATE_LIMIT = 10;
@@ -97,6 +98,7 @@ export async function GET(
         module: assignment.module,
         lesson: assignment.lesson,
         classNames: assignment.classes.map((entry) => entry.class.name),
+        googleCourseWorkId: assignment.googleCourseWorkId,
       })),
     });
   } catch (error) {
@@ -134,7 +136,10 @@ export async function POST(
       );
     }
 
-    const school = await prisma.school.findUnique({ where: { slug } });
+    const school = await prisma.school.findUnique({
+      where: { slug },
+      include: { schoolConfig: true },
+    });
 
     if (!school) {
       return NextResponse.json({ error: 'School not found' }, { status: 404 });
@@ -238,6 +243,57 @@ export async function POST(
         ? maxAttempts
         : DEFAULT_MAX_ATTEMPTS;
 
+    let googleCourseWorkId: string | null = null;
+
+    if (
+      school.schoolConfig?.gclassSyncEnabled &&
+      school.schoolConfig?.googleRefreshToken &&
+      normalizedClassIds.length > 0
+    ) {
+      const classWithGoogle = await prisma.class.findFirst({
+        where: {
+          id: { in: normalizedClassIds },
+          googleCourseId: { not: null },
+        },
+        select: { googleCourseId: true },
+      });
+
+      if (classWithGoogle?.googleCourseId) {
+        try {
+          const accessToken = await refreshGoogleAccessToken(school.schoolConfig.googleRefreshToken);
+          const response = await fetch(
+            `https://classroom.googleapis.com/v1/courses/${classWithGoogle.googleCourseId}/courseWork`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                title: String(title).trim(),
+                description: `${description ? String(description).trim() : ''}\n\nInstructions: ${
+                  instructions ? String(instructions).trim() : ''
+                }`.trim(),
+                workType: 'ASSIGNMENT',
+                state: 'PUBLISHED',
+                maxPoints: 100,
+              }),
+            }
+          );
+
+          if (response.ok) {
+            const data = await response.json();
+            googleCourseWorkId = data.id;
+          } else {
+            const errText = await response.text();
+            console.error('Failed to create Google CourseWork:', errText);
+          }
+        } catch (apiError) {
+          console.error('Error during Google Classroom coursework creation:', apiError);
+        }
+      }
+    }
+
     const createdAssignment = await prisma.$transaction(async (tx) => {
       const assignment = await tx.assignment.create({
         data: {
@@ -256,6 +312,7 @@ export async function POST(
               ? rubricJson
               : [{ name: 'Completion', percentage: 100 }],
           active: true,
+          googleCourseWorkId,
         },
       });
 

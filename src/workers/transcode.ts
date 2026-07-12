@@ -1,6 +1,7 @@
 import { Worker } from 'bullmq';
 import { redis } from '../lib/redis';
 import { prisma } from '../lib/prisma';
+import { syncGoogleClassroomRoster } from '../lib/googleClassroom';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
@@ -261,3 +262,33 @@ worker.on('completed', (job) => {
 worker.on('failed', (job, err) => {
   console.log(`Job ${job?.id} failed with error: ${err.message}`);
 });
+
+// Automatic Google Classroom Roster Sync - Runs every hour
+setInterval(async () => {
+  console.log('Running automatic background Google Classroom sync check...');
+  try {
+    const activeConfigs = await prisma.schoolConfig.findMany({
+      where: {
+        gclassSyncEnabled: true,
+        googleRefreshToken: { not: null },
+      },
+      include: {
+        school: true,
+      },
+    });
+
+    const now = Date.now();
+    for (const config of activeConfigs) {
+      const intervalMs = config.autoSyncIntervalHours * 60 * 60 * 1000;
+      const lastSync = config.lastSyncTimestamp ? new Date(config.lastSyncTimestamp).getTime() : 0;
+
+      if (now - lastSync >= intervalMs) {
+        console.log(`Auto-syncing rosters for school ${config.school.name} (${config.schoolId})...`);
+        const result = await syncGoogleClassroomRoster(config.schoolId, config.googleRefreshToken!);
+        console.log(`Auto-synced school ${config.schoolId}: synced ${result.syncedClassesCount} classes, added ${result.totalStudentsAdded} students.`);
+      }
+    }
+  } catch (error) {
+    console.error('Error during background Google Classroom auto-sync:', error);
+  }
+}, 60 * 60 * 1000); // Check every hour

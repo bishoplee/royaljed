@@ -5,6 +5,14 @@ import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
+const resolveLogoUrl = (url: string | null | undefined): string => {
+  if (!url) return '';
+  if (url.startsWith('/uploads/logos/')) {
+    return url.replace('/uploads/logos/', '/api/uploads/logos/');
+  }
+  return url;
+};
+
 interface SchoolBranding {
   name: string;
   logoUrl: string | null;
@@ -108,7 +116,7 @@ function SignInForm() {
           <div className="flex flex-col items-center mb-8 text-center">
             {schoolBranding?.logoUrl ? (
               <img 
-                src={schoolBranding.logoUrl} 
+                src={resolveLogoUrl(schoolBranding.logoUrl)} 
                 alt={schoolBranding.name} 
                 className="w-14 h-14 rounded-lg object-contain mb-4 border border-slate/10" 
               />

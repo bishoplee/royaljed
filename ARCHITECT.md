@@ -467,8 +467,12 @@ Seed Credentials (Password for all users: password123):
 ### Phase 7: Student Assignment Uploads
 *   **Actions:** Create the student portal dashboard, assignment portals, voice and video recorders for submission uploads, and attempts limitation guards.
 
+phase 7 plan [C:\Users\raphd\AppData\Roaming\Code\User\workspaceStorage\d13384ed695b7aca4088dd381863e1dd\GitHub.copilot-chat\memory-tool\memories\ZDUzNGUxZGEtZGM4Ny00Y2QxLTljYTMtN2ZjYmQ5ZmIwNjIy\plan.md]
+
 ### Phase 8: Tutor Assessment & Timestamps
 *   **Actions:** Build the tutor-grading interface, slider-driven rubric scoring system, player event listeners logging current video timestamps to comments, and comment jump triggers.
+
+phase 8 plan [C:\Users\raphd\projects\royaljed\phase8_plan.md]
 
 ### Phase 9: Google Classroom Sync & Reports
 *   **Actions:** Implement Google OAuth2 callback flows, manual/auto synchronization engines for student roster updates, and grade pushing. Add weekly student progress PDF generator utilities.

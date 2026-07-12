@@ -24,6 +24,14 @@ interface AdminLayoutClientProps {
   children: React.ReactNode;
 }
 
+const resolveLogoUrl = (url: string | null | undefined): string => {
+  if (!url) return '';
+  if (url.startsWith('/uploads/logos/')) {
+    return url.replace('/uploads/logos/', '/api/uploads/logos/');
+  }
+  return url;
+};
+
 export function AdminLayoutClient({ school, user, children }: AdminLayoutClientProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -106,7 +114,7 @@ export function AdminLayoutClient({ school, user, children }: AdminLayoutClientP
       <aside className="hidden md:flex md:flex-col md:w-64 h-screen sticky top-0 bg-brandTealDeep text-white border-r border-white/5 flex-shrink-0 overflow-y-auto no-scrollbar">
         <div className="h-16 flex items-center px-6 border-b border-white/5 gap-3">
           {school.logoUrl ? (
-            <img src={school.logoUrl} alt={school.name} className="w-8 h-8 rounded-full object-cover" />
+            <img src={resolveLogoUrl(school.logoUrl)} alt={school.name} className="w-8 h-8 rounded-full object-cover" />
           ) : (
             <div className="w-8 h-8 rounded-full bg-brandGreen flex items-center justify-center font-bold text-brandTealDeep">
               {school.name.charAt(0)}
@@ -163,7 +171,7 @@ export function AdminLayoutClient({ school, user, children }: AdminLayoutClientP
             <div className="h-16 flex items-center justify-between px-6 border-b border-white/5">
               <div className="flex items-center gap-3">
                 {school.logoUrl ? (
-                  <img src={school.logoUrl} alt={school.name} className="w-8 h-8 rounded-full object-cover" />
+                  <img src={resolveLogoUrl(school.logoUrl)} alt={school.name} className="w-8 h-8 rounded-full object-cover" />
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-brandGreen flex items-center justify-center font-bold text-brandTealDeep">
                     {school.name.charAt(0)}

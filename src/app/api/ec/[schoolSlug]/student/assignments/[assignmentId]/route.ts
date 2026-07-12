@@ -58,6 +58,24 @@ export async function GET(
       submissions: {
         where: { studentId },
         orderBy: { attemptNumber: 'desc' },
+        include: {
+          grade: {
+            include: {
+              tutor: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                },
+              },
+              timestampedFeedback: {
+                orderBy: {
+                  timestampSeconds: 'asc',
+                },
+              },
+            },
+          },
+        },
       },
     },
   });
@@ -111,6 +129,22 @@ export async function GET(
         textContent: submission.textContent,
         originalFileName: submission.originalFileName,
         mimeType: submission.mimeType,
+        grade: submission.grade
+          ? {
+              id: submission.grade.id,
+              scoresJson: submission.grade.scoresJson,
+              percentage: Number(submission.grade.percentage),
+              feedbackText: submission.grade.feedbackText,
+              gradedAt: submission.grade.gradedAt,
+              tutor: submission.grade.tutor,
+              timestampedFeedback: submission.grade.timestampedFeedback.map((entry) => ({
+                id: entry.id,
+                timestampSeconds: entry.timestampSeconds,
+                comment: entry.comment,
+                createdAt: entry.createdAt,
+              })),
+            }
+          : null,
       })),
     },
   });
