@@ -46,6 +46,20 @@ function SignInForm() {
     }
   }, [errorParam]);
 
+  // Automatically extract school slug from subdomain if present in production
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const host = window.location.host;
+      const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+      if (!isLocal) {
+        const parts = host.split('.');
+        if (parts.length >= 3 && parts[0] !== 'www') {
+          setSchoolSlug(parts[0].toLowerCase());
+        }
+      }
+    }
+  }, []);
+
   // Dynamically load school branding if slug is present
   useEffect(() => {
     const slugToFetch = schoolSlug || schoolParam;
@@ -158,7 +172,7 @@ function SignInForm() {
                 onChange={(e) => setSchoolSlug(e.target.value)}
                 placeholder="e.g. royaljed-demo"
                 className="w-full text-input rounded-md px-3.5 py-2.5 text-sm border border-slate/20 focus:outline-none focus:border-brandGreenDark transition-all"
-                disabled={!!schoolParam}
+                disabled={!!schoolParam || (schoolSlug !== '' && typeof window !== 'undefined' && window.location.host.split('.').length >= 3 && !window.location.host.includes('localhost') && window.location.host.split('.')[0] !== 'www')}
               />
               {!schoolParam && (
                 <p className="text-[11px] text-slate mt-1.5 leading-normal">
