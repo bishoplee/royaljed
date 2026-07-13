@@ -5,9 +5,12 @@ import { getToken } from 'next-auth/jwt';
 export async function middleware(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   const { pathname } = req.nextUrl;
-  const host = req.headers.get('host') || '';
-
+  
+  // Reconstruct host and protocol using forwarded headers if present (behind reverse proxies like Railway)
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || '';
   const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+  const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https');
+  const publicRequestUrl = `${proto}://${host}${pathname}${req.nextUrl.search}`;
 
   // Helper to extract base domain dynamically in production
   const getBaseDomain = (currentHost: string): string => {
@@ -25,10 +28,10 @@ export async function middleware(req: NextRequest) {
       const slug = segments[1].toLowerCase();
       const rest = '/' + segments.slice(2).join('/');
       if (isLocal) {
-        return NextResponse.redirect(new URL(`/${slug}${rest}`, req.url));
+        return NextResponse.redirect(new URL(`/${slug}${rest}`, publicRequestUrl));
       } else {
         // Redirect to subdomain in production dynamically
-        return NextResponse.redirect(new URL(`https://${slug}.${getBaseDomain(host)}${rest}`, req.url));
+        return NextResponse.redirect(new URL(`https://${slug}.${getBaseDomain(host)}${rest}`, publicRequestUrl));
       }
     }
   }
@@ -81,9 +84,9 @@ export async function middleware(req: NextRequest) {
       }
 
       // Redirect to global signin page pre-populated with school parameter
-      const signInUrl = new URL('/auth/signin', req.url);
+      const signInUrl = new URL('/auth/signin', publicRequestUrl);
       signInUrl.searchParams.set('school', schoolSlug);
-      signInUrl.searchParams.set('callbackUrl', req.url);
+      signInUrl.searchParams.set('callbackUrl', publicRequestUrl);
       return NextResponse.redirect(signInUrl);
     }
 
@@ -95,9 +98,9 @@ export async function middleware(req: NextRequest) {
       const mySlug = token.schoolSlug || 'default';
       const myRole = userRole.toLowerCase();
       if (isLocal) {
-        return NextResponse.redirect(new URL(`/${mySlug}/${myRole}/dashboard`, req.url));
+        return NextResponse.redirect(new URL(`/${mySlug}/${myRole}/dashboard`, publicRequestUrl));
       } else {
-        return NextResponse.redirect(new URL(`https://${mySlug}.${getBaseDomain(host)}/${myRole}/dashboard`, req.url));
+        return NextResponse.redirect(new URL(`https://${mySlug}.${getBaseDomain(host)}/${myRole}/dashboard`, publicRequestUrl));
       }
     }
 
@@ -105,9 +108,9 @@ export async function middleware(req: NextRequest) {
     if (tenantRelativePath === '/') {
       const rolePath = userRole === 'SUPER_ADMIN' ? 'admin' : userRole.toLowerCase();
       if (isLocal) {
-        return NextResponse.redirect(new URL(`/${schoolSlug}/${rolePath}/dashboard`, req.url));
+        return NextResponse.redirect(new URL(`/${schoolSlug}/${rolePath}/dashboard`, publicRequestUrl));
       } else {
-        return NextResponse.redirect(new URL(`https://${schoolSlug}.${getBaseDomain(host)}/${rolePath}/dashboard`, req.url));
+        return NextResponse.redirect(new URL(`https://${schoolSlug}.${getBaseDomain(host)}/${rolePath}/dashboard`, publicRequestUrl));
       }
     }
 
@@ -115,21 +118,21 @@ export async function middleware(req: NextRequest) {
     if (tenantRelativePath.startsWith('/admin')) {
       if (userRole !== 'ADMIN' && userRole !== 'SUPER_ADMIN') {
         const homeUrl = isLocal ? `/${schoolSlug}` : `https://${schoolSlug}.${getBaseDomain(host)}`;
-        return NextResponse.redirect(new URL(homeUrl, req.url));
+        return NextResponse.redirect(new URL(homeUrl, publicRequestUrl));
       }
     }
 
     if (tenantRelativePath.startsWith('/tutor')) {
       if (userRole !== 'TUTOR' && userRole !== 'ADMIN' && userRole !== 'SUPER_ADMIN') {
         const homeUrl = isLocal ? `/${schoolSlug}` : `https://${schoolSlug}.${getBaseDomain(host)}`;
-        return NextResponse.redirect(new URL(homeUrl, req.url));
+        return NextResponse.redirect(new URL(homeUrl, publicRequestUrl));
       }
     }
 
     if (tenantRelativePath.startsWith('/student')) {
       if (!['STUDENT', 'TUTOR', 'ADMIN', 'SUPER_ADMIN'].includes(userRole)) {
         const homeUrl = isLocal ? `/${schoolSlug}` : `https://${schoolSlug}.${getBaseDomain(host)}`;
-        return NextResponse.redirect(new URL(homeUrl, req.url));
+        return NextResponse.redirect(new URL(homeUrl, publicRequestUrl));
       }
     }
 
@@ -147,16 +150,16 @@ export async function middleware(req: NextRequest) {
     if (isAuthPage || pathname === '/') {
       const userRole = token.role;
       if (userRole === 'SUPER_ADMIN') {
-        return NextResponse.redirect(new URL('/super-admin/dashboard', req.url));
+        return NextResponse.redirect(new URL('/super-admin/dashboard', publicRequestUrl));
       }
       
       const mySlug = token.schoolSlug || 'default';
       const myRole = userRole.toLowerCase();
       
       if (isLocal) {
-        return NextResponse.redirect(new URL(`/${mySlug}/${myRole}/dashboard`, req.url));
+        return NextResponse.redirect(new URL(`/${mySlug}/${myRole}/dashboard`, publicRequestUrl));
       } else {
-        return NextResponse.redirect(new URL(`https://${mySlug}.${getBaseDomain(host)}/${myRole}/dashboard`, req.url));
+        return NextResponse.redirect(new URL(`https://${mySlug}.${getBaseDomain(host)}/${myRole}/dashboard`, publicRequestUrl));
       }
     }
   }
@@ -164,7 +167,7 @@ export async function middleware(req: NextRequest) {
   // Super admin guards on root domain
   if (pathname.startsWith('/super-admin')) {
     if (!token || token.role !== 'SUPER_ADMIN') {
-      return NextResponse.redirect(new URL('/auth/signin', req.url));
+      return NextResponse.redirect(new URL('/auth/signin', publicRequestUrl));
     }
   }
 
