@@ -2,12 +2,21 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
-export async function proxy(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
   const { pathname } = req.nextUrl;
   const host = req.headers.get('host') || '';
 
   const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+
+  // Helper to extract base domain dynamically in production
+  const getBaseDomain = (currentHost: string): string => {
+    const parts = currentHost.split('.');
+    if (parts.length >= 3) {
+      return parts.slice(1).join('.');
+    }
+    return currentHost;
+  };
 
   // A. Redirect visible '/ec/...' paths to clean URLs to ensure they are never exposed in address bar
   if (pathname.startsWith('/ec/')) {
@@ -18,8 +27,8 @@ export async function proxy(req: NextRequest) {
       if (isLocal) {
         return NextResponse.redirect(new URL(`/${slug}${rest}`, req.url));
       } else {
-        // Redirect to subdomain in production
-        return NextResponse.redirect(new URL(`https://${slug}.royaljed.com${rest}`, req.url));
+        // Redirect to subdomain in production dynamically
+        return NextResponse.redirect(new URL(`https://${slug}.${getBaseDomain(host)}${rest}`, req.url));
       }
     }
   }
@@ -88,7 +97,7 @@ export async function proxy(req: NextRequest) {
       if (isLocal) {
         return NextResponse.redirect(new URL(`/${mySlug}/${myRole}/dashboard`, req.url));
       } else {
-        return NextResponse.redirect(new URL(`https://${mySlug}.royaljed.com/${myRole}/dashboard`, req.url));
+        return NextResponse.redirect(new URL(`https://${mySlug}.${getBaseDomain(host)}/${myRole}/dashboard`, req.url));
       }
     }
 
@@ -98,28 +107,28 @@ export async function proxy(req: NextRequest) {
       if (isLocal) {
         return NextResponse.redirect(new URL(`/${schoolSlug}/${rolePath}/dashboard`, req.url));
       } else {
-        return NextResponse.redirect(new URL(`https://${schoolSlug}.royaljed.com/${rolePath}/dashboard`, req.url));
+        return NextResponse.redirect(new URL(`https://${schoolSlug}.${getBaseDomain(host)}/${rolePath}/dashboard`, req.url));
       }
     }
 
     // Role-based directory checks
     if (tenantRelativePath.startsWith('/admin')) {
       if (userRole !== 'ADMIN' && userRole !== 'SUPER_ADMIN') {
-        const homeUrl = isLocal ? `/${schoolSlug}` : `https://${schoolSlug}.royaljed.com`;
+        const homeUrl = isLocal ? `/${schoolSlug}` : `https://${schoolSlug}.${getBaseDomain(host)}`;
         return NextResponse.redirect(new URL(homeUrl, req.url));
       }
     }
 
     if (tenantRelativePath.startsWith('/tutor')) {
       if (userRole !== 'TUTOR' && userRole !== 'ADMIN' && userRole !== 'SUPER_ADMIN') {
-        const homeUrl = isLocal ? `/${schoolSlug}` : `https://${schoolSlug}.royaljed.com`;
+        const homeUrl = isLocal ? `/${schoolSlug}` : `https://${schoolSlug}.${getBaseDomain(host)}`;
         return NextResponse.redirect(new URL(homeUrl, req.url));
       }
     }
 
     if (tenantRelativePath.startsWith('/student')) {
       if (!['STUDENT', 'TUTOR', 'ADMIN', 'SUPER_ADMIN'].includes(userRole)) {
-        const homeUrl = isLocal ? `/${schoolSlug}` : `https://${schoolSlug}.royaljed.com`;
+        const homeUrl = isLocal ? `/${schoolSlug}` : `https://${schoolSlug}.${getBaseDomain(host)}`;
         return NextResponse.redirect(new URL(homeUrl, req.url));
       }
     }
@@ -147,7 +156,7 @@ export async function proxy(req: NextRequest) {
       if (isLocal) {
         return NextResponse.redirect(new URL(`/${mySlug}/${myRole}/dashboard`, req.url));
       } else {
-        return NextResponse.redirect(new URL(`https://${mySlug}.royaljed.com/${myRole}/dashboard`, req.url));
+        return NextResponse.redirect(new URL(`https://${mySlug}.${getBaseDomain(host)}/${myRole}/dashboard`, req.url));
       }
     }
   }

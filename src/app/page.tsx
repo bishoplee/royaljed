@@ -22,7 +22,9 @@ export default async function Home() {
       if (isLocal) {
         redirect(`/${schoolSlug}/${dashboardRole}/dashboard`);
       } else {
-        redirect(`https://${schoolSlug}.royaljed.com/${dashboardRole}/dashboard`);
+        const parts = host.split('.');
+        const baseDomain = parts.length >= 3 ? parts.slice(1).join('.') : host;
+        redirect(`https://${schoolSlug}.${baseDomain}/${dashboardRole}/dashboard`);
       }
     }
   }
