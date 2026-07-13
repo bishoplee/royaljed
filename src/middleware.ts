@@ -69,6 +69,11 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  // If a path-based prefix matches the detected school slug, set schoolPathPrefix to strip it
+  if (schoolSlug && pathSegments.length > 0 && pathSegments[0].toLowerCase() === schoolSlug) {
+    schoolPathPrefix = `/${pathSegments[0]}`;
+  }
+
   // Extract the relative path within the tenant space
   const tenantRelativePath = schoolPathPrefix
     ? pathname.substring(schoolPathPrefix.length) || '/'

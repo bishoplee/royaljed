@@ -16,7 +16,8 @@ export default async function Home() {
       const schoolSlug = session.user.schoolSlug || 'default';
       const dashboardRole = role.toLowerCase();
       
-      const host = (await headers()).get('host') || '';
+      const headersList = await headers();
+      const host = headersList.get('x-forwarded-host') || headersList.get('host') || '';
       const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
 
       if (isLocal) {
