@@ -83,8 +83,8 @@ export async function proxy(req: NextRequest) {
   if (schoolSlug) {
     // 1. If NOT authenticated
     if (!token) {
-      // Let authentication pages pass through to be served
-      if (tenantRelativePath.startsWith('/auth/signin') || tenantRelativePath.startsWith('/auth/signup')) {
+      // Let landing page and authentication pages pass through to be served
+      if (tenantRelativePath === '/' || tenantRelativePath.startsWith('/auth/signin') || tenantRelativePath.startsWith('/auth/signup')) {
         return NextResponse.next();
       }
 
