@@ -30,8 +30,19 @@ function SignUpForm() {
   const [success, setSuccess] = useState('');
   const [schoolBranding, setSchoolBranding] = useState<SchoolBranding | null>(null);
 
-  // Sync school slug parameter
+  // Automatically extract school slug from subdomain if present in production
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const host = window.location.host;
+      const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+      if (!isLocal) {
+        const parts = host.split('.');
+        if (parts.length >= 3 && parts[0] !== 'www') {
+          setSchoolSlug(parts[0].toLowerCase());
+          return;
+        }
+      }
+    }
     if (schoolParam && !registerNewSchool) {
       setSchoolSlug(schoolParam);
     }
@@ -126,7 +137,16 @@ function SignUpForm() {
         // Successful login redirect
         setTimeout(() => {
           router.refresh();
-          router.push(registerNewSchool ? `/ec/${schoolSlug}/admin/dashboard` : `/ec/${schoolSlug}/student/dashboard`);
+          const host = window.location.host;
+          const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+          const targetRole = registerNewSchool ? 'admin' : 'student';
+          if (isLocal) {
+            router.push(`/${schoolSlug}/${targetRole}/dashboard`);
+          } else {
+            const parts = host.split('.');
+            const baseDomain = parts.length >= 3 ? parts.slice(1).join('.') : host;
+            window.location.href = `https://${schoolSlug}.${baseDomain}/${targetRole}/dashboard`;
+          }
         }, 1000);
       }
 
@@ -262,8 +282,8 @@ function SignUpForm() {
                   value={schoolSlug}
                   onChange={(e) => handleSlugChange(e.target.value)}
                   placeholder="e.g. royaljed-demo"
-                  className="w-full text-input rounded-md px-3.5 py-2.5 text-sm border border-slate/20 focus:outline-none focus:border-brandGreenDark transition-all"
-                  disabled={!!schoolParam}
+                  className="w-full text-input rounded-md px-3.5 py-2.5 text-sm border border-slate/20 focus:outline-none focus:border-brandGreenDark transition-all disabled:bg-slate-50 disabled:text-slate-500"
+                  disabled={!!schoolParam || (schoolSlug !== '' && typeof window !== 'undefined' && window.location.host.split('.').length >= 3 && !window.location.host.includes('localhost') && window.location.host.split('.')[0] !== 'www')}
                 />
                 {!schoolParam && (
                   <p className="text-[11px] text-slate mt-1.5 leading-normal">
