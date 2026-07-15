@@ -1,6 +1,5 @@
-import { getServerSession } from 'next-auth';
 import { redirect, notFound } from 'next/navigation';
-import { authOptions } from '@/lib/auth';
+import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import TutorDashboardClient from './TutorDashboardClient';
 
@@ -14,17 +13,17 @@ export default async function TutorDashboardPage({ params }: TutorDashboardPageP
   const { schoolSlug } = await params;
   const slug = schoolSlug.toLowerCase().trim();
 
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  const user = await getSessionUser();
+  if (!user) {
     redirect('/auth/signin');
   }
 
-  if (session.user.role !== 'TUTOR' && session.user.role !== 'SUPER_ADMIN') {
-    redirect(`/ec/${session.user.schoolSlug}/student/dashboard`);
+  if (user.role !== 'TUTOR' && user.role !== 'SUPER_ADMIN') {
+    redirect(`/ec/${user.schoolSlug}/student/dashboard`);
   }
 
-  if (session.user.role !== 'SUPER_ADMIN' && session.user.schoolSlug !== slug) {
-    redirect(`/ec/${session.user.schoolSlug}/tutor/dashboard`);
+  if (user.role !== 'SUPER_ADMIN' && user.schoolSlug !== slug) {
+    redirect(`/ec/${user.schoolSlug}/tutor/dashboard`);
   }
 
   const school = await prisma.school.findUnique({ where: { slug } });
@@ -33,7 +32,7 @@ export default async function TutorDashboardPage({ params }: TutorDashboardPageP
   }
 
   const tutorVisibilityFilter =
-    session.user.role === 'SUPER_ADMIN'
+    user.role === 'SUPER_ADMIN'
       ? {}
       : {
           OR: [
@@ -44,7 +43,7 @@ export default async function TutorDashboardPage({ params }: TutorDashboardPageP
                   class: {
                     tutors: {
                       some: {
-                        tutorId: session.user.id,
+                        tutorId: user.id,
                       },
                     },
                   },

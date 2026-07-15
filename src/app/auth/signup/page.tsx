@@ -23,6 +23,9 @@ function SignUpForm() {
   const [password, setPassword] = useState('');
   const [schoolSlug, setSchoolSlug] = useState(schoolParam);
   const [schoolName, setSchoolName] = useState('');
+  const [isLocal, setIsLocal] = useState(false);
+  const [host, setHost] = useState('');
+  const [baseDomain, setBaseDomain] = useState('');
   
   // UX states
   const [loading, setLoading] = useState(false);
@@ -33,10 +36,14 @@ function SignUpForm() {
   // Automatically extract school slug from subdomain if present in production
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const host = window.location.host;
-      const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+      setHost(window.location.host);
+      setIsLocal(host.includes('localhost') || host.includes('127.0.0.1'));
+
+      const parts = host.split('.');
+      const baseDomain = parts.length >= 3 ? parts.slice(1).join('.') : host;
+      setBaseDomain(baseDomain);
+
       if (!isLocal) {
-        const parts = host.split('.');
         if (parts.length >= 3 && parts[0] !== 'www') {
           setSchoolSlug(parts[0].toLowerCase());
           return;
@@ -128,23 +135,30 @@ function SignUpForm() {
         schoolSlug: schoolSlug.trim(),
       });
 
+      // const host = window.location.host;
+      // const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+ 
       if (loginRes?.error) {
         // Fallback if auto-login fails, redirect to signin
         setTimeout(() => {
-          router.push(`/auth/signin?school=${schoolSlug}`);
+          if (isLocal) {
+            router.push(`/auth/signin?school=${schoolSlug}`);
+          } else {
+            // const parts = host.split('.');
+            // const baseDomain = parts.length >= 3 ? parts.slice(1).join('.') : host;
+            window.location.href = `https://${schoolSlug}.${baseDomain}/auth/signin`;
+          }
         }, 1500);
       } else {
         // Successful login redirect
         setTimeout(() => {
           router.refresh();
-          const host = window.location.host;
-          const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
           const targetRole = registerNewSchool ? 'admin' : 'student';
           if (isLocal) {
             router.push(`/${schoolSlug}/${targetRole}/dashboard`);
           } else {
-            const parts = host.split('.');
-            const baseDomain = parts.length >= 3 ? parts.slice(1).join('.') : host;
+            // const parts = host.split('.');
+            // const baseDomain = parts.length >= 3 ? parts.slice(1).join('.') : host;
             window.location.href = `https://${schoolSlug}.${baseDomain}/${targetRole}/dashboard`;
           }
         }, 1000);
@@ -362,7 +376,7 @@ function SignUpForm() {
           <div className="mt-8 pt-6 border-t border-slate/10 text-center text-xs text-slate">
             Already have an account?{' '}
             <Link 
-              href={`/auth/signin${schoolSlug ? `?school=${schoolSlug}` : ''}`} 
+              href={isLocal ? `/auth/signin${schoolSlug ? `?school=${schoolSlug}` : ''}` : `https://${schoolSlug}.${baseDomain}/auth/signin`} 
               className="text-brandGreenDark font-semibold hover:underline"
             >
               Sign In

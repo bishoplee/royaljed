@@ -1,7 +1,6 @@
 import React from 'react';
-import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
-import { authOptions } from '@/lib/auth';
+import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { AdminLayoutClient } from '@/components/AdminLayoutClient';
 
@@ -14,14 +13,14 @@ interface AdminLayoutProps {
 
 export default async function AdminLayout({ children, params }: AdminLayoutProps) {
   const { schoolSlug } = await params;
-  const session = await getServerSession(authOptions);
+  const user = await getSessionUser();
 
-  if (!session || !session.user) {
+  if (!user) {
     redirect('/auth/signin');
   }
 
   // Authorize: Admin or Super Admin only
-  const role = session.user.role;
+  const role = user.role;
   if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
     redirect('/');
   }
@@ -38,13 +37,13 @@ export default async function AdminLayout({ children, params }: AdminLayoutProps
   }
 
   // Ensure ADMIN belongs to this school, SUPER_ADMIN has global bypass
-  if (role !== 'SUPER_ADMIN' && session.user.schoolSlug !== slug) {
-    redirect(`/ec/${session.user.schoolSlug}/admin/dashboard`);
+  if (role !== 'SUPER_ADMIN' && user.schoolSlug !== slug) {
+    redirect(`/ec/${user.schoolSlug}/admin/dashboard`);
   }
 
   const sessionUser = {
-    name: session.user.name || 'Admin',
-    email: session.user.email || '',
+    name: user.name || 'Admin',
+    email: user.email || '',
     role: role,
   };
 

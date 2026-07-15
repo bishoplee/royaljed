@@ -1,8 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
-import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
-import { authOptions } from '@/lib/auth';
+import { getSessionUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 interface DashboardPageProps {
@@ -13,9 +12,9 @@ interface DashboardPageProps {
 
 export default async function AdminDashboardPage({ params }: DashboardPageProps) {
   const { schoolSlug } = await params;
-  const session = await getServerSession(authOptions);
+  const user = await getSessionUser();
 
-  if (!session || !session.user) {
+  if (!user) {
     redirect('/auth/signin');
   }
 
@@ -144,7 +143,7 @@ export default async function AdminDashboardPage({ params }: DashboardPageProps)
       {/* Welcome Header */}
       <div>
         <h2 className="text-3xl font-medium tracking-tight text-ink">
-          Welcome back, {session.user.name}
+          Welcome back, {user.name}
         </h2>
         <p className="text-slate text-sm mt-1">
           Here is a high-level overview of the {school.name} platform statistics and audit actions.

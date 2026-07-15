@@ -92,6 +92,24 @@ export async function proxy(req: NextRequest) {
     tenantRelativePath,
   });
 
+  // 1. Redirect logged-in users trying to access auth pages (/auth/signin, /auth/signup) to their dashboard
+  const isAuthPage = pathname.startsWith('/auth/signin') || pathname.startsWith('/auth/signup');
+  if (token && isAuthPage) {
+    const userRole = token.role;
+    if (userRole === 'SUPER_ADMIN') {
+      return NextResponse.redirect(new URL('/super-admin/dashboard', publicRequestUrl));
+    }
+    
+    const mySlug = token.schoolSlug || 'default';
+    const myRole = userRole.toLowerCase();
+    
+    if (isLocal) {
+      return NextResponse.redirect(new URL(`/${mySlug}/${myRole}/dashboard`, publicRequestUrl));
+    } else {
+      return NextResponse.redirect(new URL(`https://${mySlug}.${getBaseDomain(host)}/${myRole}/dashboard`, publicRequestUrl));
+    }
+  }
+
   // C. Handle routing logic for identified school tenant
   if (schoolSlug) {
     // 1. If NOT authenticated
@@ -155,13 +173,26 @@ export async function proxy(req: NextRequest) {
     }
 
     // Rewrite internally to the real App Router dynamic path under /ec/[schoolSlug]
+    const requestHeaders = new Headers(req.headers);
+    if (token) {
+      requestHeaders.set('x-user-id', (token.id as string) || '');
+      requestHeaders.set('x-user-role', (token.role as string) || '');
+      requestHeaders.set('x-user-school-slug', (token.schoolSlug as string) || '');
+      requestHeaders.set('x-user-name', (token.name as string) || '');
+      requestHeaders.set('x-user-email', (token.email as string) || '');
+    }
+
     return NextResponse.rewrite(
-      new URL(`/ec/${schoolSlug}${tenantRelativePath}`, req.url)
+      new URL(`/ec/${schoolSlug}${tenantRelativePath}`, req.url),
+      {
+        request: {
+          headers: requestHeaders,
+        },
+      }
     );
   }
 
   // D. Main Domain (root domain royaljed.com or localhost:3000 root)
-  const isAuthPage = pathname.startsWith('/auth/signin') || pathname.startsWith('/auth/signup');
 
   if (token) {
     // If logged in and visiting main domain root or auth pages, redirect to dashboard

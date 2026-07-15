@@ -126,3 +126,28 @@ export const authOptions: NextAuthOptions = {
     },
   },
 };
+
+export async function getSessionUser() {
+  // Try retrieving user details from headers injected by the proxy/middleware first
+  const { headers } = await import('next/headers');
+  const headersList = await headers();
+  const headerUserId = headersList.get('x-user-id');
+  const headerUserRole = headersList.get('x-user-role');
+  const headerUserSchoolSlug = headersList.get('x-user-school-slug');
+  const headerUserName = headersList.get('x-user-name');
+  const headerUserEmail = headersList.get('x-user-email');
+
+  if (headerUserId) {
+    return {
+      id: headerUserId,
+      role: headerUserRole || '',
+      schoolSlug: headerUserSchoolSlug || '',
+      name: headerUserName || '',
+      email: headerUserEmail || '',
+    };
+  }
+
+  const { getServerSession } = await import('next-auth');
+  const session = await getServerSession(authOptions);
+  return session?.user || null;
+}
