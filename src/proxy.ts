@@ -12,6 +12,13 @@ export async function proxy(req: NextRequest) {
   const proto = req.headers.get('x-forwarded-proto') || (isLocal ? 'http' : 'https');
   const publicRequestUrl = `${proto}://${host}${pathname}${req.nextUrl.search}`;
 
+  console.log('[Proxy Debug] Request info:', {
+    host,
+    pathname,
+    isLocal,
+    token: token ? { id: token.id, role: token.role, schoolSlug: token.schoolSlug } : null,
+  });
+
   // Helper to extract base domain dynamically in production
   const getBaseDomain = (currentHost: string): string => {
     const parts = currentHost.split('.');
@@ -78,6 +85,12 @@ export async function proxy(req: NextRequest) {
   const tenantRelativePath = schoolPathPrefix
     ? pathname.substring(schoolPathPrefix.length) || '/'
     : pathname;
+
+  console.log('[Proxy Debug] Resolved school info:', {
+    schoolSlug,
+    schoolPathPrefix,
+    tenantRelativePath,
+  });
 
   // C. Handle routing logic for identified school tenant
   if (schoolSlug) {
