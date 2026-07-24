@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { exchangeCodeForTokens } from '@/lib/googleClassroom';
+import { logAudit } from '@/lib/audit';
 
 export async function GET(req: NextRequest) {
   try {
@@ -46,12 +47,10 @@ export async function GET(req: NextRequest) {
     });
 
     // Create an audit log
-    await prisma.auditLog.create({
-      data: {
-        schoolId: school.id,
-        action: 'GOOGLE_CLASSROOM_CONNECT',
-        details: `Connected Google Classroom account. Refresh token saved.`,
-      },
+    await logAudit({
+      schoolId: school.id,
+      action: 'GOOGLE_CLASSROOM_CONNECT',
+      details: `Connected Google Classroom account. Refresh token saved.`,
     });
 
     // Redirect the user back to admin settings page

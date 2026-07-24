@@ -119,13 +119,21 @@ export default function TutorDashboardClient({
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-              className="rounded-full bg-brandGreen px-5 py-2.5 text-sm font-semibold text-brandTealDeep transition hover:bg-brandGreen/90"
-            >
-              Sign out
-            </button>
+            <div className="flex items-center gap-3">
+              <Link
+                href={`/ec/${schoolSlug}/tutor/assignments`}
+                className="rounded-full bg-brandTealDeep px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brandTealDeep/90 shadow-sm flex items-center gap-2"
+              >
+                <span>+</span> Assign Lessons & Tasks
+              </Link>
+              <button
+                type="button"
+                onClick={() => signOut({ callbackUrl: '/auth/signin' })}
+                className="rounded-full bg-brandGreen px-5 py-2.5 text-sm font-semibold text-brandTealDeep transition hover:bg-brandGreen/90"
+              >
+                Sign out
+              </button>
+            </div>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">

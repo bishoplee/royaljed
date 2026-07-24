@@ -118,7 +118,7 @@ export default async function ClassesPage({ params }: ClassesPageProps) {
   return (
     <div className="space-y-8 font-sans">
       <div>
-        <h2 className="text-3xl font-medium tracking-tight text-ink">Class Streams Manager</h2>
+        <h2 className="text-3xl font-medium tracking-tight text-ink">Class Management</h2>
         <p className="text-slate text-sm mt-1">
           Add new classes, use the bulk setups bootstrapper, or manage class rosters of {school.name}.
         </p>

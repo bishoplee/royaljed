@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { syncGoogleClassroomRoster } from '@/lib/googleClassroom';
 import { isTenantMatch } from '@/lib/tutorAccess';
+import { logAudit } from '@/lib/audit';
 
 export async function POST(
   req: NextRequest,
@@ -56,13 +57,11 @@ export async function POST(
     const result = await syncGoogleClassroomRoster(school.id, config.googleRefreshToken, classId);
 
     // Write audit log
-    await prisma.auditLog.create({
-      data: {
-        schoolId: school.id,
-        userId: session.user.id,
-        action: 'GOOGLE_CLASSROOM_SYNC',
-        details: `Roster sync executed: syncedClasses=${result.syncedClassesCount}, addedStudents=${result.totalStudentsAdded}, totalSynced=${result.totalStudentsSynced}`,
-      },
+    await logAudit({
+      schoolId: school.id,
+      userId: session.user.id,
+      action: 'GOOGLE_CLASSROOM_SYNC',
+      details: `Roster sync executed: syncedClasses=${result.syncedClassesCount}, addedStudents=${result.totalStudentsAdded}, totalSynced=${result.totalStudentsSynced}`,
     });
 
     return NextResponse.json({

@@ -19,6 +19,12 @@ enum UserStatus {
   SUSPENDED
 }
 
+enum Sex {
+  MALE
+  FEMALE
+  OTHER
+}
+
 enum ClassCategory {
   NURSERY
   PRIMARY
@@ -87,6 +93,8 @@ model User {
   email             String
   passwordHash      String     @map("password_hash")
   phone             String?
+  dateOfBirth       DateTime?  @map("date_of_birth")
+  sex               Sex?
   role              Role
   status            UserStatus @default(ACTIVE)
   googleClassroomId String?    @map("google_classroom_id")

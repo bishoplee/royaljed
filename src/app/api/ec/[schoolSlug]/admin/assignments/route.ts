@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { refreshGoogleAccessToken } from '@/lib/googleClassroom';
+import { logAudit } from '@/lib/audit';
 
 const ASSIGNMENT_CREATE_WINDOW_MS = 60 * 1000;
 const ASSIGNMENT_CREATE_LIMIT = 10;
@@ -44,7 +45,11 @@ export async function GET(
     const { schoolSlug } = await params;
     const slug = schoolSlug.toLowerCase().trim();
 
-    if (session.user.role !== 'ADMIN' && session.user.role !== 'SUPER_ADMIN') {
+    if (
+      session.user.role !== 'ADMIN' &&
+      session.user.role !== 'SUPER_ADMIN' &&
+      session.user.role !== 'TUTOR'
+    ) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -121,7 +126,11 @@ export async function POST(
     const { schoolSlug } = await params;
     const slug = schoolSlug.toLowerCase().trim();
 
-    if (session.user.role !== 'ADMIN' && session.user.role !== 'SUPER_ADMIN') {
+    if (
+      session.user.role !== 'ADMIN' &&
+      session.user.role !== 'SUPER_ADMIN' &&
+      session.user.role !== 'TUTOR'
+    ) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -325,13 +334,11 @@ export async function POST(
         });
       }
 
-      await tx.auditLog.create({
-        data: {
-          schoolId: school.id,
-          userId: session.user.id,
-          action: 'ASSIGNMENT_CREATE',
-          details: `Created assignment ${assignment.title}`,
-        },
+      await logAudit({
+        schoolId: school.id,
+        userId: session.user.id,
+        action: 'ASSIGNMENT_CREATE',
+        details: `Created assignment ${assignment.title}`,
       });
 
       return assignment;

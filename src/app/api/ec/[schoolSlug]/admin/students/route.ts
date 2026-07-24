@@ -2,8 +2,24 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { Role, UserStatus } from '@prisma/client';
+import { Role, UserStatus, ClassCategory, Sex } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { logAudit } from '@/lib/audit';
+
+function parseSex(val: any): Sex | null {
+  if (!val || typeof val !== 'string') return null;
+  const upper = val.toUpperCase().trim();
+  if (upper === 'MALE' || upper === 'M') return Sex.MALE;
+  if (upper === 'FEMALE' || upper === 'F') return Sex.FEMALE;
+  if (upper === 'OTHER' || upper === 'O') return Sex.OTHER;
+  return null;
+}
+
+function parseDob(val: any): Date | null {
+  if (!val) return null;
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+}
 
 // GET: List all students for this school
 export async function GET(
@@ -46,6 +62,8 @@ export async function GET(
         fullName: true,
         email: true,
         phone: true,
+        dateOfBirth: true,
+        sex: true,
         status: true,
         createdAt: true,
         classStudents: {
@@ -70,6 +88,8 @@ export async function GET(
       fullName: s.fullName,
       email: s.email,
       phone: s.phone,
+      dateOfBirth: s.dateOfBirth ? s.dateOfBirth.toISOString().split('T')[0] : null,
+      sex: s.sex || null,
       status: s.status,
       createdAt: s.createdAt,
       classes: s.classStudents.map((cs) => cs.class),
@@ -114,7 +134,7 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { students, fullName, email, phone, password, classId, classIds } = body;
+    const { students, fullName, email, phone, password, classId, classIds, createMissingClasses } = body;
 
     const normalizedClassIds = Array.isArray(classIds)
       ? Array.from(new Set(classIds.map((id: string) => String(id).trim()).filter(Boolean)))
@@ -136,6 +156,50 @@ export async function POST(
     if (students && Array.isArray(students)) {
       const imported: any[] = [];
       const failed: any[] = [];
+      let newClassesCreatedCount = 0;
+
+      // Class map for looking up or creating classes by name
+      const schoolClasses = await prisma.class.findMany({
+        where: { schoolId: school.id },
+        select: { id: true, name: true },
+      });
+
+      const classNameToIdMap = new Map<string, string>(
+        schoolClasses.map((c) => [c.name.toLowerCase().trim(), c.id])
+      );
+
+      // Auto-create missing classes if requested
+      if (createMissingClasses) {
+        for (const item of students) {
+          if (item.className && typeof item.className === 'string' && item.className.trim()) {
+            const rawName = item.className.trim();
+            const lowerName = rawName.toLowerCase();
+
+            if (!classNameToIdMap.has(lowerName)) {
+              const createdClass = await prisma.class.create({
+                data: {
+                  schoolId: school.id,
+                  name: rawName,
+                  category: ClassCategory.OTHER,
+                },
+              });
+              classNameToIdMap.set(lowerName, createdClass.id);
+              newClassesCreatedCount++;
+            }
+            item.classId = classNameToIdMap.get(lowerName);
+          }
+        }
+      } else {
+        // If not creating missing classes, map className to classId if it exists in DB
+        for (const item of students) {
+          if (!item.classId && item.className && typeof item.className === 'string') {
+            const lowerName = item.className.trim().toLowerCase();
+            if (classNameToIdMap.has(lowerName)) {
+              item.classId = classNameToIdMap.get(lowerName);
+            }
+          }
+        }
+      }
 
       const validClasses = normalizedClassIds.length
         ? await prisma.class.findMany({
@@ -156,8 +220,19 @@ export async function POST(
         );
       }
 
+      const seenBatchEmails = new Set<string>();
+
       for (const item of students) {
-        const { fullName: fName, email: mEmail, phone: pPhone, classId: itemClassId } = item;
+        const {
+          fullName: fName,
+          email: mEmail,
+          phone: pPhone,
+          classId: itemClassId,
+          dateOfBirth: itemDob,
+          dob: itemDob2,
+          sex: itemSex,
+          gender: itemGender,
+        } = item;
 
         if (!fName || !mEmail) {
           failed.push({ email: mEmail || 'N/A', error: 'Missing name or email' });
@@ -165,6 +240,12 @@ export async function POST(
         }
 
         const emailNormalized = mEmail.toLowerCase().trim();
+
+        if (seenBatchEmails.has(emailNormalized)) {
+          failed.push({ email: emailNormalized, error: 'Duplicate entry within submission payload' });
+          continue;
+        }
+        seenBatchEmails.add(emailNormalized);
 
         // Check if student exists in this school
         const existing = await prisma.user.findFirst({
@@ -212,6 +293,8 @@ export async function POST(
                 fullName: fName.trim(),
                 email: emailNormalized,
                 phone: pPhone ? String(pPhone).trim() : null,
+                dateOfBirth: parseDob(itemDob || itemDob2),
+                sex: parseSex(itemSex || itemGender),
                 passwordHash: defaultPasswordHash,
                 role: Role.STUDENT,
                 status: UserStatus.ACTIVE,
@@ -236,24 +319,25 @@ export async function POST(
       }
 
       // Log audit
-      await prisma.auditLog.create({
-        data: {
-          schoolId: school.id,
-          userId: session.user.id,
-          action: 'BULK_STUDENT_IMPORT',
-          details: `Imported ${imported.length} students, failed ${failed.length}`,
-        },
+      await logAudit({
+        schoolId: school.id,
+        userId: session.user.id,
+        action: 'BULK_STUDENT_IMPORT',
+        details: `Imported ${imported.length} students (${newClassesCreatedCount} new classes created), failed ${failed.length}`,
       });
 
+      const classMsg = newClassesCreatedCount > 0 ? ` (${newClassesCreatedCount} new ${newClassesCreatedCount === 1 ? 'class' : 'classes'} created)` : '';
       return NextResponse.json({
-        message: `Import complete. ${imported.length} successfully registered, ${failed.length} failed.`,
+        message: `Import complete. ${imported.length} students registered successfully${classMsg}. ${failed.length} failed.`,
         importedCount: imported.length,
         failedCount: failed.length,
-        errors: failed,
+        createdClassesCount: newClassesCreatedCount,
+        failed,
       });
     }
 
     // Case 2: Manual Student Creation
+    const { dateOfBirth, sex } = body;
     if (!fullName || !email) {
       return NextResponse.json({ error: 'Name and email are required' }, { status: 400 });
     }
@@ -302,6 +386,8 @@ export async function POST(
           fullName: fullName.trim(),
           email: emailNormalized,
           phone: phone ? phone.trim() : null,
+          dateOfBirth: parseDob(dateOfBirth),
+          sex: parseSex(sex),
           passwordHash: customPassHash,
           role: Role.STUDENT,
           status: UserStatus.ACTIVE,
@@ -320,13 +406,11 @@ export async function POST(
       return createdUser;
     });
 
-    await prisma.auditLog.create({
-      data: {
-        schoolId: school.id,
-        userId: session.user.id,
-        action: 'STUDENT_CREATE',
-        details: `Registered student ${newStudent.fullName} (${newStudent.email})`,
-      },
+    await logAudit({
+      schoolId: school.id,
+      userId: session.user.id,
+      action: 'STUDENT_CREATE',
+      details: `Registered student ${newStudent.fullName} (${newStudent.email})`,
     });
 
     return NextResponse.json({
@@ -336,6 +420,8 @@ export async function POST(
         fullName: newStudent.fullName,
         email: newStudent.email,
         phone: newStudent.phone,
+        dateOfBirth: newStudent.dateOfBirth ? newStudent.dateOfBirth.toISOString().split('T')[0] : null,
+        sex: newStudent.sex,
         status: newStudent.status,
       },
     });
@@ -377,7 +463,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { studentId, status, fullName, phone, email, classId, classIds } = body;
+    const { studentId, status, fullName, phone, email, password, classId, classIds, dateOfBirth, sex } = body;
 
     const classIdsProvided =
       Object.prototype.hasOwnProperty.call(body, 'classId') ||
@@ -424,8 +510,17 @@ export async function PUT(
       updateData.status = status;
     }
 
+    if (password) {
+      if (typeof password !== 'string' || password.length < 6) {
+        return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
+      }
+      updateData.passwordHash = await bcrypt.hash(password, 10);
+    }
+
     if (fullName) updateData.fullName = fullName.trim();
     if (phone !== undefined) updateData.phone = phone ? phone.trim() : null;
+    if (dateOfBirth !== undefined) updateData.dateOfBirth = parseDob(dateOfBirth);
+    if (sex !== undefined) updateData.sex = parseSex(sex);
     if (email) {
       const emailNormalized = email.toLowerCase().trim();
       if (emailNormalized !== student.email) {
@@ -493,13 +588,11 @@ export async function PUT(
       return updatedStudent;
     });
 
-    await prisma.auditLog.create({
-      data: {
-        schoolId: school.id,
-        userId: session.user.id,
-        action: 'STUDENT_UPDATE',
-        details: `Updated student ${student.email}: ${JSON.stringify(updateData)}`,
-      },
+    await logAudit({
+      schoolId: school.id,
+      userId: session.user.id,
+      action: 'STUDENT_UPDATE',
+      details: `Updated student ${student.email}: ${JSON.stringify(updateData)}`,
     });
 
     return NextResponse.json({
@@ -515,5 +608,73 @@ export async function PUT(
   } catch (error) {
     console.error('Error updating student:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
+// DELETE: Permanently remove a student account from school
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ schoolSlug: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session || !session.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { schoolSlug } = await params;
+    const slug = schoolSlug.toLowerCase().trim();
+
+    if (session.user.role !== 'ADMIN' && session.user.role !== 'SUPER_ADMIN') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    if (session.user.role !== 'SUPER_ADMIN' && session.user.schoolSlug !== slug) {
+      return NextResponse.json({ error: 'Forbidden: Tenant mismatch' }, { status: 403 });
+    }
+
+    const school = await prisma.school.findUnique({
+      where: { slug },
+    });
+
+    if (!school) {
+      return NextResponse.json({ error: 'School not found' }, { status: 404 });
+    }
+
+    const url = new URL(request.url);
+    const studentId = url.searchParams.get('studentId');
+
+    if (!studentId) {
+      return NextResponse.json({ error: 'Student ID parameter is required' }, { status: 400 });
+    }
+
+    const student = await prisma.user.findFirst({
+      where: {
+        id: studentId,
+        schoolId: school.id,
+        role: Role.STUDENT,
+      },
+    });
+
+    if (!student) {
+      return NextResponse.json({ error: 'Student record not found' }, { status: 404 });
+    }
+
+    await prisma.user.delete({
+      where: { id: studentId },
+    });
+
+    await logAudit({
+      schoolId: school.id,
+      userId: session.user.id,
+      action: 'STUDENT_DELETE',
+      details: `Deleted student ${student.fullName} (${student.email})`,
+    });
+
+    return NextResponse.json({ message: 'Student removed successfully' });
+  } catch (error) {
+    console.error('Error deleting student:', error);
+    return NextResponse.json({ error: 'Failed to remove student' }, { status: 500 });
   }
 }

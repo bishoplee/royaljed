@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { ClassCategory } from '@prisma/client';
+import { Role, ClassCategory } from '@prisma/client';
+import { logAudit } from '@/lib/audit';
 
 // GET: Retrieve all classes with their students and tutors
 export async function GET(
@@ -297,13 +298,11 @@ export async function POST(
       return createdClass;
     });
 
-    await prisma.auditLog.create({
-      data: {
-        schoolId: school.id,
-        userId: session.user.id,
-        action: 'CLASS_CREATE',
-        details: `Created class ${newClass.name} under category ${newClass.category}`,
-      },
+    await logAudit({
+      schoolId: school.id,
+      userId: session.user.id,
+      action: 'CLASS_CREATE',
+      details: `Created class ${newClass.name} under category ${newClass.category}`,
     });
 
     return NextResponse.json({

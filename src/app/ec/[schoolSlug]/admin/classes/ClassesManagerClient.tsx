@@ -623,7 +623,7 @@ export function ClassesManagerClient({
 
       {/* TAB 3: QUICK BULK SETUP */}
       {activeTab === 'bulk' && (
-        <div className="bg-canvas border border-slate/10 rounded-lg p-6 max-w-2xl space-y-6">
+        <div className="bg-canvas border border-slate/10 rounded-lg p-6 w-full space-y-6">
           <div className="border-b border-slate/5 pb-3">
             <h3 className="text-lg font-medium text-ink">
               Quick Setup Classes
@@ -634,7 +634,7 @@ export function ClassesManagerClient({
           </div>
 
           <form onSubmit={handleBulkSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label htmlFor="bulkPrefix" className="block text-xs font-semibold text-slate uppercase tracking-wider mb-2">
                   Class Name Prefix
@@ -667,20 +667,20 @@ export function ClassesManagerClient({
                   <option value="OTHER">Other</option>
                 </select>
               </div>
-            </div>
 
-            <div>
-              <label htmlFor="bulkSuffixes" className="block text-xs font-semibold text-slate uppercase tracking-wider mb-2">
-                Suffix Values (Comma-separated)
-              </label>
-              <input
-                id="bulkSuffixes"
-                type="text"
-                value={bulkSuffixes}
-                onChange={e => setBulkSuffixes(e.target.value)}
-                placeholder="e.g. 1, 2, 3, 4, 5, 6 or A, B, C"
-                className="w-full text-input rounded-md px-3.5 py-2.5 text-sm border border-slate/20 focus:outline-none focus:border-brandGreenDark"
-              />
+              <div>
+                <label htmlFor="bulkSuffixes" className="block text-xs font-semibold text-slate uppercase tracking-wider mb-2">
+                  Suffix Values (Comma-separated)
+                </label>
+                <input
+                  id="bulkSuffixes"
+                  type="text"
+                  value={bulkSuffixes}
+                  onChange={e => setBulkSuffixes(e.target.value)}
+                  placeholder="e.g. 1, 2, 3, 4, 5, 6 or A, B, C"
+                  className="w-full text-input rounded-md px-3.5 py-2.5 text-sm border border-slate/20 focus:outline-none focus:border-brandGreenDark"
+                />
+              </div>
             </div>
 
             {/* Live generation view */}

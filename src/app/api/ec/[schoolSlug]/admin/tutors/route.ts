@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { logAudit } from '@/lib/audit';
 
 // GET: List all tutors for this school
 export async function GET(
@@ -187,13 +188,11 @@ export async function POST(
       return createdUser;
     });
 
-    await prisma.auditLog.create({
-      data: {
-        schoolId: school.id,
-        userId: session.user.id,
-        action: 'TUTOR_CREATE',
-        details: `Registered tutor ${newTutor.fullName} (${newTutor.email})`,
-      },
+    await logAudit({
+      schoolId: school.id,
+      userId: session.user.id,
+      action: 'TUTOR_CREATE',
+      details: `Registered tutor ${newTutor.fullName} (${newTutor.email})`,
     });
 
     return NextResponse.json({
@@ -345,13 +344,11 @@ export async function PUT(
       return updatedTutor;
     });
 
-    await prisma.auditLog.create({
-      data: {
-        schoolId: school.id,
-        userId: session.user.id,
-        action: 'TUTOR_UPDATE',
-        details: `Updated tutor ${tutor.email}: ${JSON.stringify(updateData)}`,
-      },
+    await logAudit({
+      schoolId: school.id,
+      userId: session.user.id,
+      action: 'TUTOR_UPDATE',
+      details: `Updated tutor ${tutor.email}: ${JSON.stringify(updateData)}`,
     });
 
     return NextResponse.json({
